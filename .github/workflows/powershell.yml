@@ -1,5 +1,8 @@
 name: PowerShell
 on: workflow_dispatch
+env:
+  POWERSHELL_VERSION: "7.6.3"
+  POWERSHELL_REF: "v7.6.3"
 jobs:
   build:
     name: PowerShell [${{matrix.arch}}-${{matrix.os}}]
@@ -7,55 +10,76 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [ x64, arm64 ]
-        os: [ windows, macos, linux ]
-        version: [ 7.4.1 ]
-
         include:
-          - version: 7.4.1
-            git-ref: v7.4.1
-
           - os: windows
-            runner: windows-2022
+            arch: x64
+            runner: windows-2025
+            runtime-os: win7
+          - os: windows
+            arch: arm64
+            runner: windows-2025
+            runtime-os: win
           - os: macos
-            runner: macos-13
+            arch: x64
+            runner: macos-15-intel
+            runtime-os: osx
+          - os: macos
+            arch: arm64
+            runner: macos-15
+            runtime-os: osx
           - os: linux
-            runner: ubuntu-22.04
+            arch: x64
+            runner: ubuntu-24.04
+            runtime-os: linux
+          - os: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
+            runtime-os: linux
   
     steps:
       - name: Clone project
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.0
 
-      - name: Clone PowerShell ${{matrix.version}}
-        uses: actions/checkout@v4
+      - name: Clone PowerShell ${{env.POWERSHELL_VERSION}}
+        uses: actions/checkout@v7.0.0
         with:
           repository: PowerShell/PowerShell
-          ref: ${{matrix.git-ref}}
+          ref: ${{env.POWERSHELL_REF}}
           path: PowerShell
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v5.3.0
+        with:
+          global-json-file: PowerShell/global.json
 
       - name: Bootstrap PowerShell
         shell: pwsh
         run: |
           Import-Module "./PowerShell/build.psm1" -Force
-          Start-PSBootstrap
+          Start-PSBootstrap -Scenario DotNet
 
       - name: Build PowerShell
         shell: pwsh
         run: |
           Import-Module "./PowerShell/build.psm1" -Force
-          Start-PSBootstrap
-
-      - name: Build PowerShell
-        shell: pwsh
-        run: |
-          Import-Module "./PowerShell/build.psm1" -Force
-          $DotNetOs = @{'windows'='win';'macos'='osx';'linux'='linux'}['${{matrix.os}}']
-          $DotNetArch = '${{matrix.arch}}'
-          if (($DotNetOs -eq 'win') -and ($DotNetArch -eq 'x64')){
-            $DotNetOs = "win7"
+          if ('${{matrix.os}}' -eq 'windows') {
+            Switch-PSNugetConfig -Source Public
+            $ModuleNugetConfig = @(
+              '<?xml version="1.0" encoding="utf-8"?>',
+              '<configuration>',
+              '  <packageSources>',
+              '    <clear />',
+              '    <add key="powershell" value="https://pkgs.dev.azure.com/powershell/PowerShell/_packaging/PowerShell/nuget/v3/index.json" />',
+              '  </packageSources>',
+              '  <disabledPackageSources>',
+              '    <clear />',
+              '  </disabledPackageSources>',
+              '</configuration>'
+            )
+            Set-Content -Path "./PowerShell/src/Modules/nuget.config" -Value $ModuleNugetConfig -Encoding utf8
           }
-          $Runtime = "${DotNetOs}-${{matrix.arch}}"
-          $OutputPath = Join-Path $PWD "PowerShell-${{matrix.version}}-${{matrix.os}}-${{matrix.arch}}"
+          $Runtime = "${{matrix.runtime-os}}-${{matrix.arch}}"
+          $OutputPath = Join-Path $PWD "PowerShell-$Env:POWERSHELL_VERSION-${{matrix.os}}-${{matrix.arch}}"
           $ArchiveFile = "$OutputPath.tar.gz"
           $PSBuildParams = @{
             Configuration = "Release";
@@ -64,12 +88,16 @@ jobs:
             ForMinimalSize = $false;
             Detailed = $true;
             Clean = $true;
+            ReleaseTag = $Env:POWERSHELL_REF;
+          }
+          if ('${{matrix.os}}' -ne 'windows') {
+            $PSBuildParams.UseNuGetOrg = $true
           }
           Start-PSBuild @PSBuildParams
           & 'tar' '-czf' "$ArchiveFile" '-C' "$OutputPath" "."
 
       - name: Upload PowerShell package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
-          name: PowerShell-${{matrix.version}}-${{matrix.os}}-${{matrix.arch}}
-          path: PowerShell-${{matrix.version}}-${{matrix.os}}-${{matrix.arch}}.tar.gz
+          name: PowerShell-${{env.POWERSHELL_VERSION}}-${{matrix.os}}-${{matrix.arch}}
+          path: PowerShell-${{env.POWERSHELL_VERSION}}-${{matrix.os}}-${{matrix.arch}}.tar.gz
