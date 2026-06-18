@@ -1,0 +1,59 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <PowerShellSDKIncludeAppHost Condition="'$(PowerShellSDKIncludeAppHost)' == ''">false</PowerShellSDKIncludeAppHost>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(PowerShellSDKIncludeAppHost)' == 'true' or '$(PowerShellSDKIncludeAppHost)' == 'True'">
+    <_PowerShellSDKAppHostRid Condition="'$(PowerShellSDKAppHostRuntimeIdentifier)' != ''">$(PowerShellSDKAppHostRuntimeIdentifier)</_PowerShellSDKAppHostRid>
+    <_PowerShellSDKAppHostRid Condition="'$(_PowerShellSDKAppHostRid)' == '' and '$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</_PowerShellSDKAppHostRid>
+    <_PowerShellSDKAppHostRid Condition="'$(_PowerShellSDKAppHostRid)' == '' and '$(NETCoreSdkRuntimeIdentifier)' != ''">$(NETCoreSdkRuntimeIdentifier)</_PowerShellSDKAppHostRid>
+    <_PowerShellSDKAppHostRid Condition="'$(_PowerShellSDKAppHostRid)' == 'win7-x64'">win-x64</_PowerShellSDKAppHostRid>
+  </PropertyGroup>
+
+  <Target Name="_PowerShellSDKResolveAppHost"
+          Condition="'$(PowerShellSDKIncludeAppHost)' == 'true' or '$(PowerShellSDKIncludeAppHost)' == 'True'">
+    <Error Condition="'$(_PowerShellSDKAppHostRid)' == ''"
+           Text="PowerShellSDKIncludeAppHost is true, but no runtime identifier is available. Set RuntimeIdentifier or PowerShellSDKAppHostRuntimeIdentifier." />
+
+    <PropertyGroup>
+      <_PowerShellSDKAppHostSourceDir>$(MSBuildThisFileDirectory)../tools/apphost/$(_PowerShellSDKAppHostRid)/</_PowerShellSDKAppHostSourceDir>
+    </PropertyGroup>
+
+    <Error Condition="!Exists('$(_PowerShellSDKAppHostSourceDir)')"
+           Text="PowerShellSDKIncludeAppHost is true, but Microsoft.PowerShell.SDK does not include apphost files for '$(_PowerShellSDKAppHostRid)'. Set PowerShellSDKAppHostRuntimeIdentifier to a supported runtime identifier." />
+
+    <ItemGroup>
+      <_PowerShellSDKAppHostFile Include="$(_PowerShellSDKAppHostSourceDir)**/*" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="PowerShellSDKCopyAppHostToOutput"
+          DependsOnTargets="_PowerShellSDKResolveAppHost"
+          AfterTargets="CopyFilesToOutputDirectory"
+          Condition="'$(PowerShellSDKIncludeAppHost)' == 'true' or '$(PowerShellSDKIncludeAppHost)' == 'True'">
+    <Copy SourceFiles="@(_PowerShellSDKAppHostFile)"
+          DestinationFiles="@(_PowerShellSDKAppHostFile->'$(OutDir)%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+    <Exec Command="chmod +x &quot;$(OutDir)pwsh&quot;"
+          Condition="'$(OS)' != 'Windows_NT' and Exists('$(OutDir)pwsh')" />
+  </Target>
+
+  <Target Name="PowerShellSDKAddAppHostToPublish"
+          DependsOnTargets="_PowerShellSDKResolveAppHost"
+          BeforeTargets="ComputeFilesToPublish"
+          Condition="'$(PowerShellSDKIncludeAppHost)' == 'true' or '$(PowerShellSDKIncludeAppHost)' == 'True'">
+    <ItemGroup>
+      <ResolvedFileToPublish Include="@(_PowerShellSDKAppHostFile)">
+        <RelativePath>%(RecursiveDir)%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+
+  <Target Name="PowerShellSDKChmodPublishedAppHost"
+          AfterTargets="Publish"
+          Condition="'$(PowerShellSDKIncludeAppHost)' == 'true' or '$(PowerShellSDKIncludeAppHost)' == 'True'">
+    <Exec Command="chmod +x &quot;$(PublishDir)pwsh&quot;"
+          Condition="'$(OS)' != 'Windows_NT' and Exists('$(PublishDir)pwsh')" />
+  </Target>
+</Project>
