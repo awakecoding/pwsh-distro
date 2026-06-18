@@ -160,6 +160,7 @@ jobs:
           if (-not $TargetFramework) {
             throw "Unable to determine PowerShell TargetFramework from PowerShell.Common.props"
           }
+          "POWERSHELL_TARGET_FRAMEWORK=$TargetFramework" >> $Env:GITHUB_ENV
 
           $SdkBinPath = "./src/Microsoft.PowerShell.SDK/bin/Release/$TargetFramework"
           dotnet build ./src/Microsoft.PowerShell.SDK/Microsoft.PowerShell.SDK.csproj -c Release /p:ReleaseTag=$Env:POWERSHELL_VERSION
@@ -231,6 +232,16 @@ jobs:
           nuget pack
           Move-Item *.nupkg ../package
           Pop-Location
+
+      - name: Validate PowerShell SDK package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./eng/Validate-PowerShellSdkPackage.ps1 `
+            -PackageDirectory ./PowerShell/package `
+            -PowerShellVersion $Env:POWERSHELL_VERSION `
+            -TargetFramework $Env:POWERSHELL_TARGET_FRAMEWORK `
+            -RuntimeIdentifier linux-x64
 
       - name: Upload PowerShell package
         uses: actions/upload-artifact@v7.0.1

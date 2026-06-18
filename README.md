@@ -17,7 +17,7 @@ GitHub Actions workflows for building redistributable PowerShell artifacts from 
 
 | Workflow | Purpose | Output |
 | --- | --- | --- |
-| `.github/workflows/powershell-sdk.yml` | Builds PowerShell from source and repacks `Microsoft.PowerShell.SDK` for the upstream target framework, including opt-in apphost import files. | `PowerShell-SDK-7.6.3` artifact containing a `.nupkg`. |
+| `.github/workflows/powershell-sdk.yml` | Builds PowerShell from source, repacks `Microsoft.PowerShell.SDK` for the upstream target framework, and validates the package in a sample .NET app with opt-in apphost import. | `PowerShell-SDK-7.6.3` artifact containing a `.nupkg`. |
 | `.github/workflows/powershell.yml` | Builds self-contained PowerShell archives for Windows, macOS, and Linux on x64 and arm64. | `PowerShell-7.6.3-<os>-<arch>` `.tar.gz` artifacts. |
 | `.github/workflows/dotnet-runtime.yml` | Builds the .NET runtime tag used by this PowerShell release for Windows, macOS, and Linux on x86_64 and arm64 with prebuilt clang+llvm from `awakecoding/llvm-prebuilt`. | Runtime build output in the workflow logs/workspace. |
 
