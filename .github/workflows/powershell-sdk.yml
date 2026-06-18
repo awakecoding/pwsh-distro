@@ -1,53 +1,82 @@
 name: PowerShell SDK
 on: workflow_dispatch
+env:
+  POWERSHELL_VERSION: "7.6.3"
+  POWERSHELL_REF: "v7.6.3"
 jobs:
   build:
-    name: PowerShell SDK
-    runs-on: ubuntu-20.04
+    name: PowerShell SDK [7.6.3]
+    runs-on: ubuntu-24.04
   
     steps:
       - name: Clone project
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.0
 
-      - name: Clone PowerShell
-        uses: actions/checkout@v4
+      - name: Clone PowerShell ${{env.POWERSHELL_VERSION}}
+        uses: actions/checkout@v7.0.0
         with:
           repository: PowerShell/PowerShell
-          ref: v7.4.1
+          ref: ${{env.POWERSHELL_REF}}
           path: PowerShell
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v5.3.0
+        with:
+          global-json-file: PowerShell/global.json
+
+      - name: Install Mono
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mono-devel
+
+      - name: Setup NuGet CLI
+        uses: NuGet/setup-nuget@v4.0
 
       - name: Build PowerShell SDK
         shell: pwsh
         working-directory: PowerShell
         run: |
+          $ErrorActionPreference = 'Stop'
           Import-Module .\build.psm1 -Force
-          Start-PSBootstrap
-          Start-PSBuild -Clean -PSModuleRestore -Configuration Release
+          Start-PSBootstrap -Scenario DotNet
+          Start-PSBuild -Clean -PSModuleRestore -Configuration Release -ReleaseTag $Env:POWERSHELL_REF -UseNuGetOrg
+
+          [xml]$CommonProps = Get-Content ./PowerShell.Common.props
+          $TargetFramework = $CommonProps.Project.PropertyGroup |
+            ForEach-Object { $_.TargetFramework } |
+            Where-Object { $_ } |
+            Select-Object -First 1
+          if (-not $TargetFramework) {
+            throw "Unable to determine PowerShell TargetFramework from PowerShell.Common.props"
+          }
+
+          $SdkBinPath = "./src/Microsoft.PowerShell.SDK/bin/Release/$TargetFramework"
+          dotnet build ./src/Microsoft.PowerShell.SDK/Microsoft.PowerShell.SDK.csproj -c Release /p:ReleaseTag=$Env:POWERSHELL_VERSION
+
           Remove-Item .\nupkg-out -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
           New-Item .\nupkg-out -ItemType Directory -Force
-          dotnet build ./src/Microsoft.PowerShell.SDK/Microsoft.PowerShell.SDK.csproj -c Release
-          New-Item ./nupkg-out/unix/lib/net8.0 -ItemType Directory | Out-Null
-          New-Item ./nupkg-out/ref/net8.0 -ItemType Directory | Out-Null
-          Copy-Item ./src/Microsoft.PowerShell.SDK/bin/Release/net8.0/Microsoft.PowerShell.SDK*.dll ./nupkg-out/unix/lib/net8.0
-          Copy-Item ./src/Microsoft.PowerShell.SDK/bin/Release/net8.0/Microsoft.PowerShell.SDK*.xml ./nupkg-out/unix/lib/net8.0
-          Copy-Item ./src/Microsoft.PowerShell.SDK/bin/Release/net8.0/*.dll ./nupkg-out/ref/net8.0
-          Copy-Item ./src/Microsoft.PowerShell.SDK/bin/Release/net8.0/*.xml ./nupkg-out/ref/net8.0
+          New-Item "./nupkg-out/unix/lib/$TargetFramework" -ItemType Directory | Out-Null
+          New-Item "./nupkg-out/ref/$TargetFramework" -ItemType Directory | Out-Null
+          Copy-Item "$SdkBinPath/Microsoft.PowerShell.SDK*.dll" "./nupkg-out/unix/lib/$TargetFramework"
+          Copy-Item "$SdkBinPath/Microsoft.PowerShell.SDK*.xml" "./nupkg-out/unix/lib/$TargetFramework"
+          Copy-Item "$SdkBinPath/*.dll" "./nupkg-out/ref/$TargetFramework"
+          Copy-Item "$SdkBinPath/*.xml" "./nupkg-out/ref/$TargetFramework"
           $AnyAnyRuntimesDir = "./nupkg-out/contentFiles/any/any/runtimes"
           New-Item $AnyAnyRuntimesDir -ItemType Directory | Out-Null
           Get-Item ./src/Modules/Unix/*/*.ps* | ForEach-Object {
-            ($ModuleName, $ModuleFile) = ($_.FullName -Replace ".*src/Modules/Unix/","") -Split "/"
-            $DestinationDir = "$AnyAnyRuntimesDir/unix/lib/net8.0/Modules/$ModuleName"
+            $ModuleName = Split-Path (Split-Path $_.FullName -Parent) -Leaf
+            $DestinationDir = "$AnyAnyRuntimesDir/unix/lib/$TargetFramework/Modules/$ModuleName"
             New-Item $DestinationDir -ItemType Directory -ErrorAction SilentlyContinue | Out-Null
             Copy-Item $_ $DestinationDir
           }
           Get-Item ./src/Modules/Windows/*/*.ps* | ForEach-Object {
-            ($ModuleName, $ModuleFile) = ($_.FullName -Replace ".*src/Modules/Windows/","") -Split "/"
-            $DestinationDir = "$AnyAnyRuntimesDir/win/lib/net8.0/Modules/$ModuleName"
+            $ModuleName = Split-Path (Split-Path $_.FullName -Parent) -Leaf
+            $DestinationDir = "$AnyAnyRuntimesDir/win/lib/$TargetFramework/Modules/$ModuleName"
             New-Item $DestinationDir -ItemType Directory -ErrorAction SilentlyContinue | Out-Null
             Copy-Item $_ $DestinationDir
           }
-          $PSVersion = Get-PSVersion -OmitCommitId
-          wget "https://www.nuget.org/api/v2/package/Microsoft.PowerShell.SDK/$PSVersion" -O "Microsoft.PowerShell.SDK.${PSVersion}.nupkg"
+          $PSVersion = $Env:POWERSHELL_VERSION
+          Invoke-WebRequest "https://www.nuget.org/api/v2/package/Microsoft.PowerShell.SDK/$PSVersion" -OutFile "Microsoft.PowerShell.SDK.${PSVersion}.nupkg"
           Remove-Item ./nupkg-prod -Recurse -Force -ErrorAction SilentlyContinue
           Expand-Archive "./Microsoft.PowerShell.SDK.${PSVersion}.nupkg" nupkg-prod
           Get-ChildItem -Path ./nupkg-prod -Include @('*.nuspec','*.png','*.xml') -Recurse -Depth 1 | % { Copy-Item $_ ./nupkg-out -Force }
@@ -55,14 +84,14 @@ jobs:
           Copy-Item "./nupkg-prod/*.png" ./nupkg-out/ -Force
           Remove-Item ./nupkg-out/contentFiles/any/any/ref -Recurse -Force -ErrorAction SilentlyContinue
           Copy-Item ./nupkg-prod/contentFiles/any/any/ref ./nupkg-out/contentFiles/any/any/ref -Recurse
-          New-Item "./package" -ItemType Directory | Out-Null
-          Set-Location ./nupkg-out
+          New-Item "./package" -ItemType Directory -Force | Out-Null
+          Push-Location ./nupkg-out
           nuget pack
           Move-Item *.nupkg ../package
-          Set-Location ..
+          Pop-Location
 
       - name: Upload PowerShell package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
-          name: PowerShell-SDK
+          name: PowerShell-SDK-${{env.POWERSHELL_VERSION}}
           path: "PowerShell/package/*.nupkg"
