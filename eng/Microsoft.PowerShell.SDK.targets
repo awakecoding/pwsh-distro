@@ -8,6 +8,8 @@
     <_PowerShellSDKAppHostRid Condition="'$(_PowerShellSDKAppHostRid)' == '' and '$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</_PowerShellSDKAppHostRid>
     <_PowerShellSDKAppHostRid Condition="'$(_PowerShellSDKAppHostRid)' == '' and '$(NETCoreSdkRuntimeIdentifier)' != ''">$(NETCoreSdkRuntimeIdentifier)</_PowerShellSDKAppHostRid>
     <_PowerShellSDKAppHostRid Condition="'$(_PowerShellSDKAppHostRid)' == 'win7-x64'">win-x64</_PowerShellSDKAppHostRid>
+    <_PowerShellSDKAppHostRuntimeGroup>unix</_PowerShellSDKAppHostRuntimeGroup>
+    <_PowerShellSDKAppHostRuntimeGroup Condition="$([System.String]::Copy('$(_PowerShellSDKAppHostRid)').StartsWith('win'))">win</_PowerShellSDKAppHostRuntimeGroup>
   </PropertyGroup>
 
   <Target Name="_PowerShellSDKResolveAppHost"
@@ -17,13 +19,17 @@
 
     <PropertyGroup>
       <_PowerShellSDKAppHostSourceDir>$(MSBuildThisFileDirectory)../tools/apphost/$(_PowerShellSDKAppHostRid)/</_PowerShellSDKAppHostSourceDir>
+      <_PowerShellSDKModuleSourceDir>$(MSBuildThisFileDirectory)../contentFiles/any/any/runtimes/$(_PowerShellSDKAppHostRuntimeGroup)/lib/$(TargetFramework)/Modules/</_PowerShellSDKModuleSourceDir>
     </PropertyGroup>
 
     <Error Condition="!Exists('$(_PowerShellSDKAppHostSourceDir)')"
-           Text="PowerShellSDKIncludeAppHost is true, but Microsoft.PowerShell.SDK does not include apphost files for '$(_PowerShellSDKAppHostRid)'. Set PowerShellSDKAppHostRuntimeIdentifier to a supported runtime identifier." />
+           Text="PowerShellSDKIncludeAppHost is true, but this PowerShell SDK package does not include apphost files for '$(_PowerShellSDKAppHostRid)'. Set PowerShellSDKAppHostRuntimeIdentifier to a supported runtime identifier." />
+    <Error Condition="!Exists('$(_PowerShellSDKModuleSourceDir)')"
+           Text="PowerShellSDKIncludeAppHost is true, but this PowerShell SDK package does not include module files for runtime group '$(_PowerShellSDKAppHostRuntimeGroup)' and target framework '$(TargetFramework)'." />
 
     <ItemGroup>
       <_PowerShellSDKAppHostFile Include="$(_PowerShellSDKAppHostSourceDir)**/*" />
+      <_PowerShellSDKModuleFile Include="$(_PowerShellSDKModuleSourceDir)**/*" />
     </ItemGroup>
   </Target>
 
@@ -33,6 +39,9 @@
           Condition="'$(PowerShellSDKIncludeAppHost)' == 'true' or '$(PowerShellSDKIncludeAppHost)' == 'True'">
     <Copy SourceFiles="@(_PowerShellSDKAppHostFile)"
           DestinationFiles="@(_PowerShellSDKAppHostFile->'$(OutDir)%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_PowerShellSDKModuleFile)"
+          DestinationFiles="@(_PowerShellSDKModuleFile->'$(OutDir)Modules/%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="true" />
     <Exec Command="chmod +x &quot;$(OutDir)pwsh&quot;"
           Condition="'$(OS)' != 'Windows_NT' and Exists('$(OutDir)pwsh')" />
@@ -45,6 +54,10 @@
     <ItemGroup>
       <ResolvedFileToPublish Include="@(_PowerShellSDKAppHostFile)">
         <RelativePath>%(RecursiveDir)%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+      <ResolvedFileToPublish Include="@(_PowerShellSDKModuleFile)">
+        <RelativePath>Modules/%(RecursiveDir)%(Filename)%(Extension)</RelativePath>
         <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
       </ResolvedFileToPublish>
     </ItemGroup>

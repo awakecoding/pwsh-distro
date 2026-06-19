@@ -9,7 +9,11 @@ param(
   [Parameter(Mandatory)]
   [string] $TargetFramework,
 
-  [string] $RuntimeIdentifier
+  [string] $RuntimeIdentifier,
+
+  [string] $PackageId = 'Devolutions.PowerShell.SDK',
+
+  [string] $PackageVendorName = 'Devolutions'
 )
 
 Set-StrictMode -Version 3.0
@@ -67,25 +71,101 @@ function Add-ProjectProperty {
   [void] $PropertyGroup.AppendChild($Element)
 }
 
+function Read-ZipEntryText {
+  param(
+    [Parameter(Mandatory)]
+    [System.IO.Compression.ZipArchiveEntry] $Entry
+  )
+
+  $Stream = $Entry.Open()
+  $Reader = [System.IO.StreamReader]::new($Stream)
+  try {
+    return $Reader.ReadToEnd()
+  } finally {
+    $Reader.Dispose()
+    $Stream.Dispose()
+  }
+}
+
+function Get-NuspecMetadataValue {
+  param(
+    [Parameter(Mandatory)]
+    [xml] $Nuspec,
+
+    [Parameter(Mandatory)]
+    [System.Xml.XmlNamespaceManager] $NamespaceManager,
+
+    [Parameter(Mandatory)]
+    [string] $Name
+  )
+
+  $Element = $Nuspec.SelectSingleNode("/n:package/n:metadata/n:$Name", $NamespaceManager)
+  if (-not $Element) {
+    throw "SDK package nuspec is missing required metadata element '$Name'"
+  }
+
+  return $Element.InnerText
+}
+
 if (-not $RuntimeIdentifier) {
   $RuntimeIdentifier = Get-DefaultRuntimeIdentifier
 }
 
 $PackageDirectoryPath = (Resolve-Path -LiteralPath $PackageDirectory).Path
-$Package = Get-ChildItem -LiteralPath $PackageDirectoryPath -Filter "Microsoft.PowerShell.SDK.$PowerShellVersion*.nupkg" |
+$Package = Get-ChildItem -LiteralPath $PackageDirectoryPath -Filter "$PackageId.$PowerShellVersion*.nupkg" |
   Sort-Object LastWriteTime -Descending |
   Select-Object -First 1
 if (-not $Package) {
-  throw "Unable to find Microsoft.PowerShell.SDK.$PowerShellVersion nupkg in $PackageDirectoryPath"
+  throw "Unable to find $PackageId.$PowerShellVersion nupkg in $PackageDirectoryPath"
 }
 
+$EmbeddedPowerShellPackageIds = @(
+  'Microsoft.PowerShell.SDK',
+  'System.Management.Automation',
+  'Microsoft.PowerShell.Commands.Management',
+  'Microsoft.PowerShell.Commands.Utility',
+  'Microsoft.PowerShell.ConsoleHost',
+  'Microsoft.PowerShell.Security',
+  'Microsoft.PowerShell.Commands.Diagnostics',
+  'Microsoft.Management.Infrastructure.CimCmdlets',
+  'Microsoft.WSMan.Management',
+  'Microsoft.PowerShell.CoreCLR.Eventing',
+  'Microsoft.WSMan.Runtime'
+)
+
 $ExecutableName = if ($RuntimeIdentifier -like 'win-*') { 'pwsh.exe' } else { 'pwsh' }
+$RuntimeAssetGroup = if ($RuntimeIdentifier -like 'win-*') { 'win' } else { 'unix' }
 $ExpectedPackageEntries = @(
-  'buildTransitive/Microsoft.PowerShell.SDK.targets',
+  "buildTransitive/$PackageId.targets",
   "tools/apphost/$RuntimeIdentifier/$ExecutableName",
   "tools/apphost/$RuntimeIdentifier/pwsh.dll",
-  "tools/apphost/$RuntimeIdentifier/pwsh.runtimeconfig.json"
+  "tools/apphost/$RuntimeIdentifier/pwsh.runtimeconfig.json",
+  "ref/$TargetFramework/System.Management.Automation.dll",
+  "ref/$TargetFramework/Microsoft.PowerShell.Commands.Management.dll",
+  "ref/$TargetFramework/Microsoft.PowerShell.Commands.Utility.dll",
+  "ref/$TargetFramework/Microsoft.PowerShell.ConsoleHost.dll",
+  "ref/$TargetFramework/Microsoft.PowerShell.Security.dll",
+  "runtimes/$RuntimeAssetGroup/lib/$TargetFramework/Microsoft.PowerShell.SDK.dll",
+  "runtimes/$RuntimeAssetGroup/lib/$TargetFramework/System.Management.Automation.dll",
+  "runtimes/$RuntimeAssetGroup/lib/$TargetFramework/Microsoft.PowerShell.Commands.Management.dll",
+  "runtimes/$RuntimeAssetGroup/lib/$TargetFramework/Microsoft.PowerShell.Commands.Utility.dll",
+  "runtimes/$RuntimeAssetGroup/lib/$TargetFramework/Microsoft.PowerShell.ConsoleHost.dll",
+  "runtimes/$RuntimeAssetGroup/lib/$TargetFramework/Microsoft.PowerShell.Security.dll"
 )
+if ($RuntimeAssetGroup -eq 'win') {
+  $ExpectedPackageEntries += @(
+    "ref/$TargetFramework/Microsoft.PowerShell.Commands.Diagnostics.dll",
+    "ref/$TargetFramework/Microsoft.Management.Infrastructure.CimCmdlets.dll",
+    "ref/$TargetFramework/Microsoft.WSMan.Management.dll",
+    "ref/$TargetFramework/Microsoft.PowerShell.CoreCLR.Eventing.dll",
+    "ref/$TargetFramework/Microsoft.WSMan.Runtime.dll",
+    "runtimes/win/lib/$TargetFramework/Microsoft.PowerShell.Commands.Diagnostics.dll",
+    "runtimes/win/lib/$TargetFramework/Microsoft.Management.Infrastructure.CimCmdlets.dll",
+    "runtimes/win/lib/$TargetFramework/Microsoft.WSMan.Management.dll",
+    "runtimes/win/lib/$TargetFramework/Microsoft.PowerShell.CoreCLR.Eventing.dll",
+    "runtimes/win/lib/$TargetFramework/Microsoft.WSMan.Runtime.dll"
+  )
+}
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $Zip = [System.IO.Compression.ZipFile]::OpenRead($Package.FullName)
@@ -93,6 +173,43 @@ try {
   foreach ($EntryName in $ExpectedPackageEntries) {
     if (-not ($Zip.Entries | Where-Object FullName -EQ $EntryName)) {
       throw "SDK package is missing expected entry: $EntryName"
+    }
+  }
+
+  if ($PackageVendorName) {
+    $NuspecEntry = $Zip.Entries |
+      Where-Object { $_.FullName -like '*.nuspec' -and $_.FullName -notlike '*/*' } |
+      Select-Object -First 1
+    if (-not $NuspecEntry) {
+      throw "SDK package is missing a root nuspec"
+    }
+
+    [xml] $Nuspec = Read-ZipEntryText -Entry $NuspecEntry
+    $NamespaceManager = [System.Xml.XmlNamespaceManager]::new($Nuspec.NameTable)
+    $NamespaceManager.AddNamespace('n', $Nuspec.DocumentElement.NamespaceURI)
+
+    $NuspecPackageId = Get-NuspecMetadataValue -Nuspec $Nuspec -NamespaceManager $NamespaceManager -Name 'id'
+    if ($NuspecPackageId -ne $PackageId) {
+      throw "SDK package nuspec id is '$NuspecPackageId', expected '$PackageId'"
+    }
+
+    foreach ($ElementName in @('authors', 'owners', 'copyright')) {
+      $Value = Get-NuspecMetadataValue -Nuspec $Nuspec -NamespaceManager $NamespaceManager -Name $ElementName
+      if ($Value -notlike "*$PackageVendorName*") {
+        throw "SDK package nuspec metadata '$ElementName' does not contain '$PackageVendorName': $Value"
+      }
+      if ($PackageVendorName -ne 'Microsoft' -and $Value -like '*Microsoft*') {
+        throw "SDK package nuspec metadata '$ElementName' still contains 'Microsoft': $Value"
+      }
+    }
+
+    $OriginalDependencies = @(
+      $Nuspec.SelectNodes('/n:package/n:metadata/n:dependencies//n:dependency', $NamespaceManager) |
+        Where-Object { $EmbeddedPowerShellPackageIds -contains [string] $_.id } |
+        ForEach-Object { [string] $_.id }
+    )
+    if ($OriginalDependencies) {
+      throw "SDK package nuspec still references original PowerShell package dependencies: $($OriginalDependencies -join ', ')"
     }
   }
 } finally {
@@ -131,7 +248,7 @@ try {
   </packageSources>
   <packageSourceMapping>
     <packageSource key="ci-nupkg">
-      <package pattern="Microsoft.PowerShell.SDK" />
+      <package pattern="$PackageId" />
     </packageSource>
     <packageSource key="nuget.org">
       <package pattern="*" />
@@ -160,10 +277,25 @@ foreach (PSObject result in ps.Invoke())
   Add-ProjectProperty -Project $Project -PropertyGroup $PropertyGroup -Name 'PowerShellSDKIncludeAppHost' -Value 'true'
   $Project.Save($ProjectPath)
 
-  Invoke-DotNet @('add', $ProjectPath, 'package', 'Microsoft.PowerShell.SDK', '--version', $PowerShellVersion, '--no-restore')
+  Invoke-DotNet @('add', $ProjectPath, 'package', $PackageId, '--version', $PowerShellVersion, '--no-restore')
   Invoke-DotNet @('restore', $ProjectPath, '--configfile', (Join-Path $SampleDirectory 'nuget.config'), '--verbosity', 'minimal')
 
-  $RestoredSdkPath = Join-Path $PackagesDirectory (Join-Path 'microsoft.powershell.sdk' $PowerShellVersion)
+  $AssetsPath = Join-Path (Split-Path $ProjectPath -Parent) 'obj/project.assets.json'
+  $Assets = Get-Content -LiteralPath $AssetsPath -Raw | ConvertFrom-Json
+  $RestoredPackageIds = @(
+    $Assets.libraries.PSObject.Properties.Name |
+      ForEach-Object { ($_ -split '/', 2)[0] }
+  )
+  $RestoredOriginalPowerShellPackageIds = @(
+    $RestoredPackageIds |
+      Where-Object { $EmbeddedPowerShellPackageIds -contains $_ }
+  )
+  if ($RestoredOriginalPowerShellPackageIds) {
+    throw "Restore imported original PowerShell package IDs instead of vendored IDs: $($RestoredOriginalPowerShellPackageIds -join ', ')"
+  }
+
+  $RestoredSdkPackageDirectoryName = $PackageId.ToLowerInvariant()
+  $RestoredSdkPath = Join-Path $PackagesDirectory (Join-Path $RestoredSdkPackageDirectoryName $PowerShellVersion)
   foreach ($RelativePath in $ExpectedPackageEntries) {
     $RestoredPath = Join-Path $RestoredSdkPath ($RelativePath -replace '/', [System.IO.Path]::DirectorySeparatorChar)
     if (-not (Test-Path $RestoredPath -PathType Leaf)) {
@@ -181,6 +313,15 @@ foreach (PSObject result in ps.Invoke())
       throw "Sample app output is missing expected apphost file: $OutputPath"
     }
   }
+  foreach ($RelativeModulePath in @(
+      'Modules/Microsoft.PowerShell.Management/Microsoft.PowerShell.Management.psd1',
+      'Modules/Microsoft.PowerShell.Utility/Microsoft.PowerShell.Utility.psd1',
+      'Modules/Microsoft.PowerShell.Security/Microsoft.PowerShell.Security.psd1')) {
+    $OutputPath = Join-Path $OutputDirectory ($RelativeModulePath -replace '/', [System.IO.Path]::DirectorySeparatorChar)
+    if (-not (Test-Path $OutputPath -PathType Leaf)) {
+      throw "Sample app output is missing expected apphost module file: $OutputPath"
+    }
+  }
 
   $AppOutput = & dotnet run --project $ProjectPath --no-build
   if ($LASTEXITCODE -ne 0) {
@@ -191,18 +332,76 @@ foreach (PSObject result in ps.Invoke())
     throw "Sample app imported PowerShell SDK version '$AppVersion', expected '$PowerShellVersion'"
   }
 
-  $PwshOutput = & $PwshPath -NoLogo -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'
+  Invoke-DotNet @('publish', $ProjectPath, '--nologo', '--verbosity', 'minimal', '-c', 'Release', '-r', $RuntimeIdentifier, '--self-contained', 'true')
+
+  $PublishDirectory = Join-Path $SampleDirectory (Join-Path 'bin' (Join-Path 'Release' (Join-Path $TargetFramework (Join-Path $RuntimeIdentifier 'publish'))))
+  $PublishedPwshPath = Join-Path $PublishDirectory $ExecutableName
+  foreach ($FileName in @($ExecutableName, 'pwsh.dll', 'pwsh.runtimeconfig.json')) {
+    $PublishedPath = Join-Path $PublishDirectory $FileName
+    if (-not (Test-Path $PublishedPath -PathType Leaf)) {
+      throw "Sample publish output is missing expected apphost file: $PublishedPath"
+    }
+  }
+  foreach ($RelativeModulePath in @(
+      'Modules/Microsoft.PowerShell.Management/Microsoft.PowerShell.Management.psd1',
+      'Modules/Microsoft.PowerShell.Utility/Microsoft.PowerShell.Utility.psd1',
+      'Modules/Microsoft.PowerShell.Security/Microsoft.PowerShell.Security.psd1')) {
+    $PublishedPath = Join-Path $PublishDirectory ($RelativeModulePath -replace '/', [System.IO.Path]::DirectorySeparatorChar)
+    if (-not (Test-Path $PublishedPath -PathType Leaf)) {
+      throw "Sample publish output is missing expected apphost module file: $PublishedPath"
+    }
+  }
+
+  $PwshOutput = & $PublishedPwshPath -NoLogo -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'
   if ($LASTEXITCODE -ne 0) {
-    throw "$PwshPath failed with exit code $LASTEXITCODE"
+    throw "$PublishedPwshPath failed with exit code $LASTEXITCODE"
   }
   $PwshVersion = [string] ($PwshOutput | Select-Object -Last 1)
   if ($PwshVersion.Trim() -ne $PowerShellVersion) {
-    throw "$PwshPath reported PowerShell version '$PwshVersion', expected '$PowerShellVersion'"
+    throw "$PublishedPwshPath reported PowerShell version '$PwshVersion', expected '$PowerShellVersion'"
   }
 
-  Write-Host "Validated Microsoft.PowerShell.SDK $PowerShellVersion from $($Package.FullName)"
-  Write-Host "Sample app imported PowerShell SDK $($AppVersion.Trim())"
-  Write-Host "Sample output apphost reported PowerShell $($PwshVersion.Trim()): $PwshPath"
+  $PreviousPSModulePath = $Env:PSModulePath
+  $PreviousExpectedModuleRoot = $Env:PowerShellSDKExpectedModuleRoot
+  try {
+    $Env:PSModulePath = ''
+    $Env:PowerShellSDKExpectedModuleRoot = Join-Path $PublishDirectory 'Modules'
+    $ModuleProbe = @'
+$ErrorActionPreference = 'Stop'
+$expectedModuleRoot = $env:PowerShellSDKExpectedModuleRoot
+foreach ($moduleName in 'Microsoft.PowerShell.Management', 'Microsoft.PowerShell.Utility') {
+  $module = Get-Module -ListAvailable $moduleName | Select-Object -First 1
+  if ($null -eq $module) {
+    throw "Module '$moduleName' is not available"
+  }
+
+  if (-not $module.Path.StartsWith($expectedModuleRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "Module '$moduleName' was loaded from '$($module.Path)' instead of '$expectedModuleRoot'"
+  }
+}
+
+$getProcess = Get-Command Get-Process -ErrorAction Stop
+if ($getProcess.Source -ne 'Microsoft.PowerShell.Management') {
+  throw "Get-Process resolved from '$($getProcess.Source)' instead of Microsoft.PowerShell.Management"
+}
+
+$selectObject = Get-Command Select-Object -ErrorAction Stop
+if ($selectObject.Source -ne 'Microsoft.PowerShell.Utility') {
+  throw "Select-Object resolved from '$($selectObject.Source)' instead of Microsoft.PowerShell.Utility"
+}
+'@
+    $PwshModuleProbeOutput = & $PublishedPwshPath -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command $ModuleProbe
+    if ($LASTEXITCODE -ne 0) {
+      throw "$PublishedPwshPath failed module probe with exit code $LASTEXITCODE"
+    }
+  } finally {
+    $Env:PSModulePath = $PreviousPSModulePath
+    $Env:PowerShellSDKExpectedModuleRoot = $PreviousExpectedModuleRoot
+  }
+
+  Write-Host "Validated $PackageId $PowerShellVersion from $($Package.FullName)"
+  Write-Host "Sample app imported vendored PowerShell SDK $($AppVersion.Trim())"
+  Write-Host "Sample publish apphost reported PowerShell $($PwshVersion.Trim()): $PublishedPwshPath"
 } finally {
   Set-Location $PreviousLocation
   $Env:NUGET_PACKAGES = $PreviousNuGetPackages
