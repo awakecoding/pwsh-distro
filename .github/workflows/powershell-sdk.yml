@@ -2,7 +2,10 @@ name: PowerShell SDK
 on: workflow_dispatch
 env:
   POWERSHELL_VERSION: "7.6.3"
-  POWERSHELL_REF: "v7.6.3"
+  POWERSHELL_RELEASE_TAG: "v7.6.3"
+  POWERSHELL_UPSTREAM_TAG: "upstream/v7.6.3"
+  POWERSHELL_SOURCE_REPOSITORY: ${{ github.repository }}
+  POWERSHELL_SOURCE_REF: "release/v7.6.3"
   SDK_VENDOR_NAME: "Devolutions"
   SDK_PACKAGE_ID: "Devolutions.PowerShell.SDK"
   MULTI_PWSH_APPHOST_PACKAGE_ID: "Devolutions.MultiPwsh.Cli"
@@ -41,12 +44,65 @@ jobs:
       - name: Clone project
         uses: actions/checkout@v7.0.0
 
-      - name: Clone PowerShell ${{env.POWERSHELL_VERSION}}
+      - name: Clone PowerShell source ${{env.POWERSHELL_SOURCE_REF}}
         uses: actions/checkout@v7.0.0
         with:
-          repository: PowerShell/PowerShell
-          ref: ${{env.POWERSHELL_REF}}
+          repository: ${{env.POWERSHELL_SOURCE_REPOSITORY}}
+          ref: ${{env.POWERSHELL_SOURCE_REF}}
           path: PowerShell
+          fetch-depth: 0
+
+      - name: Verify PowerShell source ref
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          function Invoke-GitPowerShell {
+            param(
+              [Parameter(Mandatory, ValueFromRemainingArguments)]
+              [string[]] $Arguments
+            )
+
+            $Output = & git -C PowerShell @Arguments
+            if ($LASTEXITCODE -ne 0) {
+              throw "git -C PowerShell $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
+            }
+
+            return $Output
+          }
+
+          function Test-GitCommitRef {
+            param(
+              [Parameter(Mandatory)]
+              [string] $Ref
+            )
+
+            & git -C PowerShell rev-parse --verify "$Ref^{commit}" *> $null
+            return $LASTEXITCODE -eq 0
+          }
+
+          $ExpectedVersion = $Env:POWERSHELL_RELEASE_TAG -replace '^v', ''
+          if ($Env:POWERSHELL_VERSION -ne $ExpectedVersion) {
+            throw "POWERSHELL_VERSION '$Env:POWERSHELL_VERSION' does not match POWERSHELL_RELEASE_TAG '$Env:POWERSHELL_RELEASE_TAG'."
+          }
+
+          $SourceCommit = (Invoke-GitPowerShell rev-parse HEAD).Trim()
+          Write-Host "PowerShell source: $Env:POWERSHELL_SOURCE_REPOSITORY@$Env:POWERSHELL_SOURCE_REF ($SourceCommit)"
+
+          $BaseRef = if ($Env:POWERSHELL_SOURCE_REPOSITORY -eq $Env:GITHUB_REPOSITORY) {
+            $Env:POWERSHELL_UPSTREAM_TAG
+          } else {
+            $Env:POWERSHELL_RELEASE_TAG
+          }
+
+          if (-not (Test-GitCommitRef $BaseRef)) {
+            throw "Expected PowerShell base tag '$BaseRef' was not found in the PowerShell checkout."
+          }
+
+          & git -C PowerShell merge-base --is-ancestor "${BaseRef}^{commit}" HEAD
+          if ($LASTEXITCODE -ne 0) {
+            throw "PowerShell source ref '$Env:POWERSHELL_SOURCE_REF' is not based on '$BaseRef'."
+          }
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v5.3.0
@@ -268,7 +324,7 @@ jobs:
             Runtime = "${{matrix.psbuild-runtime}}";
             Output = $OutputPath;
             Clean = $true;
-            ReleaseTag = $Env:POWERSHELL_REF;
+            ReleaseTag = $Env:POWERSHELL_RELEASE_TAG;
             NoPSModuleRestore = $true;
             SkipExperimentalFeatureGeneration = $true;
           }
@@ -388,12 +444,65 @@ jobs:
       - name: Clone project
         uses: actions/checkout@v7.0.0
 
-      - name: Clone PowerShell ${{env.POWERSHELL_VERSION}}
+      - name: Clone PowerShell source ${{env.POWERSHELL_SOURCE_REF}}
         uses: actions/checkout@v7.0.0
         with:
-          repository: PowerShell/PowerShell
-          ref: ${{env.POWERSHELL_REF}}
+          repository: ${{env.POWERSHELL_SOURCE_REPOSITORY}}
+          ref: ${{env.POWERSHELL_SOURCE_REF}}
           path: PowerShell
+          fetch-depth: 0
+
+      - name: Verify PowerShell source ref
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          function Invoke-GitPowerShell {
+            param(
+              [Parameter(Mandatory, ValueFromRemainingArguments)]
+              [string[]] $Arguments
+            )
+
+            $Output = & git -C PowerShell @Arguments
+            if ($LASTEXITCODE -ne 0) {
+              throw "git -C PowerShell $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
+            }
+
+            return $Output
+          }
+
+          function Test-GitCommitRef {
+            param(
+              [Parameter(Mandatory)]
+              [string] $Ref
+            )
+
+            & git -C PowerShell rev-parse --verify "$Ref^{commit}" *> $null
+            return $LASTEXITCODE -eq 0
+          }
+
+          $ExpectedVersion = $Env:POWERSHELL_RELEASE_TAG -replace '^v', ''
+          if ($Env:POWERSHELL_VERSION -ne $ExpectedVersion) {
+            throw "POWERSHELL_VERSION '$Env:POWERSHELL_VERSION' does not match POWERSHELL_RELEASE_TAG '$Env:POWERSHELL_RELEASE_TAG'."
+          }
+
+          $SourceCommit = (Invoke-GitPowerShell rev-parse HEAD).Trim()
+          Write-Host "PowerShell source: $Env:POWERSHELL_SOURCE_REPOSITORY@$Env:POWERSHELL_SOURCE_REF ($SourceCommit)"
+
+          $BaseRef = if ($Env:POWERSHELL_SOURCE_REPOSITORY -eq $Env:GITHUB_REPOSITORY) {
+            $Env:POWERSHELL_UPSTREAM_TAG
+          } else {
+            $Env:POWERSHELL_RELEASE_TAG
+          }
+
+          if (-not (Test-GitCommitRef $BaseRef)) {
+            throw "Expected PowerShell base tag '$BaseRef' was not found in the PowerShell checkout."
+          }
+
+          & git -C PowerShell merge-base --is-ancestor "${BaseRef}^{commit}" HEAD
+          if ($LASTEXITCODE -ne 0) {
+            throw "PowerShell source ref '$Env:POWERSHELL_SOURCE_REF' is not based on '$BaseRef'."
+          }
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v5.3.0
@@ -429,7 +538,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           Import-Module .\build.psm1 -Force
           Start-PSBootstrap -Scenario DotNet
-          Start-PSBuild -Clean -PSModuleRestore -Configuration Release -ReleaseTag $Env:POWERSHELL_REF -UseNuGetOrg
+          Start-PSBuild -Clean -PSModuleRestore -Configuration Release -ReleaseTag $Env:POWERSHELL_RELEASE_TAG -UseNuGetOrg
 
           [xml]$CommonProps = Get-Content ./PowerShell.Common.props
           $TargetFramework = $CommonProps.Project.PropertyGroup |
