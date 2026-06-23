@@ -9,6 +9,8 @@ GitHub Actions workflows for building redistributable PowerShell artifacts from 
 | PowerShell | `7.6.3` / `v7.6.3` |
 | PowerShell target framework | `net10.0` |
 | PowerShell SDK package ID | `Devolutions.PowerShell.SDK` |
+| multi-pwsh apphost package | `Devolutions.MultiPwsh.Cli` / `0.14.0` |
+| multi-pwsh apphost package source | `https://api.nuget.org/v3/index.json` |
 | .NET runtime workflow | `v10.0.5` |
 | llvm-prebuilt | `v2026.1.1` |
 | clang+llvm | `22.1.4` |
@@ -30,7 +32,7 @@ The SDK workflow intentionally derives the target framework from upstream `Power
 
 The package keeps original assembly identities (`System.Management.Automation.dll`, `Microsoft.PowerShell.Commands.Utility.dll`, and related assemblies) so consumers only need to change the NuGet package reference. Source-built PowerShell assemblies are embedded directly in `Devolutions.PowerShell.SDK`, so validation fails if original source-built package IDs such as `Microsoft.PowerShell.SDK` or `System.Management.Automation` appear in the restore graph. External packages that are not built by this repository, including `Microsoft.PowerShell.Native` and `Microsoft.PowerShell.MarkdownRender`, remain normal public NuGet dependencies.
 
-The SDK package also includes source-built apphost files for `win-x64`, `linux-x64`, `linux-arm64`, `osx-x64`, and `osx-arm64`. These files are inert by default. A consuming project can copy the matching `pwsh`/`pwsh.exe`, `pwsh.dll`, `pwsh.runtimeconfig.json`, and the matching built-in module manifests into its output by setting:
+The SDK package also includes apphost files for `win-x64`, `linux-x64`, `linux-arm64`, `osx-x64`, and `osx-arm64`. The native `pwsh`/`pwsh.exe` launcher is staged from the public `Devolutions.MultiPwsh.Cli` build-time package on NuGet.org; `pwsh.dll`, `pwsh.runtimeconfig.json`, runtime assemblies, and modules remain source-built by this repository. These files are inert by default. A consuming project can copy the matching `pwsh`/`pwsh.exe`, `pwsh.dll`, `pwsh.runtimeconfig.json`, and the matching built-in module manifests into its output by setting:
 
 ```xml
 <PropertyGroup>

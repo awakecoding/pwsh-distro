@@ -5,6 +5,9 @@ env:
   POWERSHELL_REF: "v7.6.3"
   SDK_VENDOR_NAME: "Devolutions"
   SDK_PACKAGE_ID: "Devolutions.PowerShell.SDK"
+  MULTI_PWSH_APPHOST_PACKAGE_ID: "Devolutions.MultiPwsh.Cli"
+  MULTI_PWSH_APPHOST_PACKAGE_VERSION: "0.14.0"
+  MULTI_PWSH_APPHOST_PACKAGE_SOURCE: "https://api.nuget.org/v3/index.json"
 jobs:
   apphost:
     name: PowerShell SDK apphost [${{matrix.rid}}]
@@ -75,6 +78,189 @@ jobs:
             Set-Content -Path "./src/Modules/nuget.config" -Value $ModuleNugetConfig -Encoding utf8
           }
 
+          [xml]$CommonProps = Get-Content ./PowerShell.Common.props
+          $TargetFramework = $CommonProps.Project.PropertyGroup |
+            ForEach-Object { $_.TargetFramework } |
+            Where-Object { $_ } |
+            Select-Object -First 1
+          if (-not $TargetFramework) {
+            throw "Unable to determine PowerShell TargetFramework from PowerShell.Common.props"
+          }
+
+          $RequiredAppHostExecutables = [ordered]@{
+            'win-x64' = 'pwsh.exe';
+            'linux-x64' = 'pwsh';
+            'linux-arm64' = 'pwsh';
+            'osx-x64' = 'pwsh';
+            'osx-arm64' = 'pwsh';
+          }
+
+          function ConvertTo-XmlAttributeValue {
+            param(
+              [AllowNull()]
+              [string] $Value
+            )
+
+            if ($null -eq $Value) {
+              return ''
+            }
+
+            return [System.Security.SecurityElement]::Escape($Value)
+          }
+
+          function Resolve-MultiPwshAppHostAssets {
+            param(
+              [Parameter(Mandatory)]
+              [string] $TargetFramework
+            )
+
+            foreach ($VariableName in @(
+                'MULTI_PWSH_APPHOST_PACKAGE_ID',
+                'MULTI_PWSH_APPHOST_PACKAGE_VERSION',
+                'MULTI_PWSH_APPHOST_PACKAGE_SOURCE')) {
+              if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($VariableName))) {
+                throw "Required environment variable '$VariableName' is not set"
+              }
+            }
+
+            $TempRoot = if ($Env:RUNNER_TEMP) { $Env:RUNNER_TEMP } else { [System.IO.Path]::GetTempPath() }
+            $ResolveRoot = Join-Path $TempRoot "multi-pwsh-apphost-resolve"
+            $ProjectPath = Join-Path $ResolveRoot "MultiPwshAppHostResolver.csproj"
+            $NuGetConfigPath = Join-Path $ResolveRoot "nuget.config"
+            $AssetListPath = Join-Path $ResolveRoot "multi-pwsh-apphost-assets.tsv"
+            $InfoPath = Join-Path $ResolveRoot "multi-pwsh-apphost-info.txt"
+
+            Remove-Item $ResolveRoot -Recurse -Force -ErrorAction SilentlyContinue
+            New-Item $ResolveRoot -ItemType Directory -Force | Out-Null
+
+            $PackageSourceXml = ConvertTo-XmlAttributeValue $Env:MULTI_PWSH_APPHOST_PACKAGE_SOURCE
+            $NuGetConfigLines = @(
+              '<?xml version="1.0" encoding="utf-8"?>',
+              '<configuration>',
+              '  <packageSources>',
+              '    <clear />',
+              "    <add key=`"multiPwsh`" value=`"$PackageSourceXml`" />",
+              '  </packageSources>'
+            )
+            $NuGetConfigLines += '</configuration>'
+            Set-Content -Path $NuGetConfigPath -Value $NuGetConfigLines -Encoding utf8
+
+            $PackageIdXml = ConvertTo-XmlAttributeValue $Env:MULTI_PWSH_APPHOST_PACKAGE_ID
+            $PackageVersionXml = ConvertTo-XmlAttributeValue $Env:MULTI_PWSH_APPHOST_PACKAGE_VERSION
+            $TargetFrameworkXml = ConvertTo-XmlAttributeValue $TargetFramework
+            $ResolverProject = @"
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <TargetFramework>$TargetFrameworkXml</TargetFramework>
+              <MultiPwshRuntimeNativeContentCopyEnabled>false</MultiPwshRuntimeNativeContentCopyEnabled>
+            </PropertyGroup>
+            <ItemGroup>
+              <PackageReference Include="$PackageIdXml" Version="$PackageVersionXml" PrivateAssets="all" GeneratePathProperty="true" />
+            </ItemGroup>
+            <Target Name="WriteMultiPwshAppHostAssets" DependsOnTargets="ResolveMultiPwshAppHostAssets">
+              <WriteLinesToFile File="`$(MultiPwshAppHostAssetOutputPath)"
+                                Lines="@(MultiPwshAppHostAsset->'%(RuntimeIdentifier)|%(NativeFileName)|%(AppHostFileName)|%(PackageRelativePath)|%(PackageId)|%(FullPath)')"
+                                Overwrite="true" />
+              <WriteLinesToFile File="`$(MultiPwshAppHostInfoPath)"
+                                Lines="PackageRoot=`$(PkgDevolutions_MultiPwsh_Cli)|ManifestPath=`$(MultiPwshAppHostManifestPath)"
+                                Overwrite="true" />
+            </Target>
+          </Project>
+          "@
+            Set-Content -Path $ProjectPath -Value $ResolverProject -Encoding utf8
+
+            & dotnet restore $ProjectPath --configfile $NuGetConfigPath --verbosity minimal
+            if ($LASTEXITCODE -ne 0) {
+              throw "Restoring $Env:MULTI_PWSH_APPHOST_PACKAGE_ID $Env:MULTI_PWSH_APPHOST_PACKAGE_VERSION failed with exit code $LASTEXITCODE"
+            }
+
+            $MSBuildArguments = @(
+              'msbuild',
+              $ProjectPath,
+              '-nologo',
+              '-v:minimal',
+              '-t:WriteMultiPwshAppHostAssets',
+              "/p:MultiPwshAppHostAssetOutputPath=$AssetListPath",
+              "/p:MultiPwshAppHostInfoPath=$InfoPath"
+            )
+            & dotnet @MSBuildArguments
+            if ($LASTEXITCODE -ne 0) {
+              throw "Resolving $Env:MULTI_PWSH_APPHOST_PACKAGE_ID apphost assets failed with exit code $LASTEXITCODE"
+            }
+            if (-not (Test-Path $AssetListPath -PathType Leaf)) {
+              throw "ResolveMultiPwshAppHostAssets did not write an apphost asset list at $AssetListPath"
+            }
+
+            $PackageInfo = @{}
+            if (Test-Path $InfoPath -PathType Leaf) {
+              foreach ($InfoField in ((Get-Content -LiteralPath $InfoPath -Raw) -split '\|')) {
+                $Pair = $InfoField -split '=', 2
+                if ($Pair.Count -eq 2) {
+                  $PackageInfo[$Pair[0]] = $Pair[1].Trim()
+                }
+              }
+            }
+
+            $ResolvedAssets = @{}
+            foreach ($Line in Get-Content -LiteralPath $AssetListPath) {
+              if ([string]::IsNullOrWhiteSpace($Line)) {
+                continue
+              }
+
+              $Fields = $Line -split '\|', 6
+              if ($Fields.Count -ne 6) {
+                throw "Unexpected multi-pwsh apphost asset record: $Line"
+              }
+
+              $RuntimeIdentifier = $Fields[0]
+              $NativeFileName = $Fields[1]
+              $AppHostFileName = $Fields[2]
+              $PackageRelativePath = $Fields[3]
+              $PackageId = $Fields[4]
+              $SourcePath = $Fields[5]
+
+              if ($PackageId -ne $Env:MULTI_PWSH_APPHOST_PACKAGE_ID) {
+                throw "Resolved apphost asset for package '$PackageId', expected '$Env:MULTI_PWSH_APPHOST_PACKAGE_ID'"
+              }
+              if ($ResolvedAssets.ContainsKey($RuntimeIdentifier)) {
+                throw "ResolveMultiPwshAppHostAssets returned multiple assets for runtime identifier '$RuntimeIdentifier'"
+              }
+              if ([string]::IsNullOrWhiteSpace($SourcePath) -or -not (Test-Path -LiteralPath $SourcePath -PathType Leaf)) {
+                $PackageRoot = $PackageInfo['PackageRoot']
+                if (-not [string]::IsNullOrWhiteSpace($PackageRoot) -and
+                    -not [string]::IsNullOrWhiteSpace($PackageRelativePath)) {
+                  $SourcePath = Join-Path $PackageRoot ($PackageRelativePath -replace '/', [System.IO.Path]::DirectorySeparatorChar)
+                }
+              }
+              if (-not (Test-Path -LiteralPath $SourcePath -PathType Leaf)) {
+                throw "Resolved apphost asset for '$RuntimeIdentifier' does not exist at '$SourcePath'"
+              }
+
+              $ResolvedAssets[$RuntimeIdentifier] = [pscustomobject]@{
+                RuntimeIdentifier = $RuntimeIdentifier;
+                NativeFileName = $NativeFileName;
+                AppHostFileName = $AppHostFileName;
+                PackageRelativePath = $PackageRelativePath;
+                PackageId = $PackageId;
+                SourcePath = $SourcePath;
+              }
+            }
+
+            foreach ($RequiredRid in $RequiredAppHostExecutables.Keys) {
+              if (-not $ResolvedAssets.ContainsKey($RequiredRid)) {
+                throw "The $Env:MULTI_PWSH_APPHOST_PACKAGE_ID package did not expose an apphost asset for required RID '$RequiredRid'"
+              }
+
+              $ExpectedAppHostFileName = $RequiredAppHostExecutables[$RequiredRid]
+              if ($ResolvedAssets[$RequiredRid].AppHostFileName -ne $ExpectedAppHostFileName) {
+                throw "The apphost asset for '$RequiredRid' maps to '$($ResolvedAssets[$RequiredRid].AppHostFileName)', expected '$ExpectedAppHostFileName'"
+              }
+            }
+
+            Write-Host "Resolved $Env:MULTI_PWSH_APPHOST_PACKAGE_ID apphost assets for: $($ResolvedAssets.Keys -join ', ')"
+            return ,$ResolvedAssets
+          }
+
           $Rid = "${{matrix.rid}}"
           $OutputPath = Join-Path $PWD "PowerShell-AppHost-$Rid"
           $PSBuildParams = @{
@@ -90,6 +276,7 @@ jobs:
             $PSBuildParams.UseNuGetOrg = $true
           }
 
+          $MultiPwshAppHostAssets = Resolve-MultiPwshAppHostAssets -TargetFramework $TargetFramework
           Start-PSBuild @PSBuildParams
 
           $PackageRuntimeGroup = switch ($Rid) {
@@ -98,15 +285,6 @@ jobs:
             default { $null }
           }
           if ($PackageRuntimeGroup) {
-            [xml]$CommonProps = Get-Content ./PowerShell.Common.props
-            $TargetFramework = $CommonProps.Project.PropertyGroup |
-              ForEach-Object { $_.TargetFramework } |
-              Where-Object { $_ } |
-              Select-Object -First 1
-            if (-not $TargetFramework) {
-              throw "Unable to determine PowerShell TargetFramework from PowerShell.Common.props"
-            }
-
             dotnet build ./src/Microsoft.PowerShell.SDK/Microsoft.PowerShell.SDK.csproj -c Release /p:ReleaseTag=$Env:POWERSHELL_VERSION
             if ($LASTEXITCODE -ne 0) {
               throw "Building Microsoft.PowerShell.SDK failed with exit code $LASTEXITCODE"
@@ -157,13 +335,35 @@ jobs:
 
           $StagePath = Join-Path (Join-Path $PWD "apphost-package") $Rid
           New-Item $StagePath -ItemType Directory -Force | Out-Null
-          $RequiredFiles = @("${{matrix.executable}}", "pwsh.dll", "pwsh.runtimeconfig.json")
-          foreach ($FileName in $RequiredFiles) {
+          $AppHostAsset = $MultiPwshAppHostAssets[$Rid]
+          if (-not $AppHostAsset) {
+            throw "No resolved multi-pwsh apphost asset is available for '$Rid'"
+          }
+
+          $ExecutableDestinationPath = Join-Path $StagePath $AppHostAsset.AppHostFileName
+          Copy-Item -LiteralPath $AppHostAsset.SourcePath -Destination $ExecutableDestinationPath -Force
+          if (-not (Test-Path $ExecutableDestinationPath -PathType Leaf)) {
+            throw "Failed to stage multi-pwsh apphost executable for '$Rid' at $ExecutableDestinationPath"
+          }
+
+          foreach ($FileName in @("pwsh.dll", "pwsh.runtimeconfig.json")) {
             $SourcePath = Join-Path $OutputPath $FileName
             if (-not (Test-Path $SourcePath -PathType Leaf)) {
               throw "PowerShell apphost build did not produce required file: $SourcePath"
             }
             Copy-Item $SourcePath $StagePath -Force
+          }
+
+      - name: Validate staged PowerShell apphost
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $StagePath = "PowerShell/apphost-package/${{matrix.rid}}"
+          foreach ($FileName in @("${{matrix.executable}}", "pwsh.dll", "pwsh.runtimeconfig.json")) {
+            $FilePath = Join-Path $StagePath $FileName
+            if (-not (Test-Path $FilePath -PathType Leaf)) {
+              throw "Missing staged PowerShell SDK apphost file for ${{matrix.rid}}: $FilePath"
+            }
           }
 
       - name: Upload PowerShell apphost
