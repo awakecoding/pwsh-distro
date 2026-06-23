@@ -40,6 +40,10 @@ jobs:
             runtime-os: linux
   
     steps:
+      - name: Enable Windows long path support
+        if: runner.os == 'Windows'
+        run: git config --system core.longpaths true
+
       - name: Clone project with PowerShell submodule
         uses: actions/checkout@v7.0.0
         with:
