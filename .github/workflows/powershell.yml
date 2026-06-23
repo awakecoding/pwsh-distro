@@ -5,7 +5,7 @@ env:
   POWERSHELL_RELEASE_TAG: "v7.6.3"
   POWERSHELL_UPSTREAM_TAG: "upstream/v7.6.3"
   POWERSHELL_SOURCE_REPOSITORY: ${{ github.repository }}
-  POWERSHELL_SOURCE_REF: "release/v7.6.3"
+  POWERSHELL_SOURCE_REF: "downstream/v7.6.3"
 jobs:
   build:
     name: PowerShell [${{matrix.arch}}-${{matrix.os}}]
@@ -57,9 +57,9 @@ jobs:
               [string[]] $Arguments
             )
 
-            $Output = & git -C PowerShell @Arguments
+            $Output = & git -C pwsh-src @Arguments
             if ($LASTEXITCODE -ne 0) {
-              throw "git -C PowerShell $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
+              throw "git -C pwsh-src $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
             }
 
             return $Output
@@ -71,7 +71,7 @@ jobs:
               [string] $Ref
             )
 
-            & git -C PowerShell rev-parse --verify "$Ref^{commit}" *> $null
+            & git -C pwsh-src rev-parse --verify "$Ref^{commit}" *> $null
             return $LASTEXITCODE -eq 0
           }
 
@@ -93,7 +93,7 @@ jobs:
             throw "Expected PowerShell base tag '$BaseRef' was not found in the PowerShell checkout."
           }
 
-          & git -C PowerShell merge-base --is-ancestor "${BaseRef}^{commit}" HEAD
+          & git -C pwsh-src merge-base --is-ancestor "${BaseRef}^{commit}" HEAD
           if ($LASTEXITCODE -ne 0) {
             throw "PowerShell source ref '$Env:POWERSHELL_SOURCE_REF' is not based on '$BaseRef'."
           }
@@ -101,18 +101,18 @@ jobs:
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v5.3.0
         with:
-          global-json-file: PowerShell/global.json
+          global-json-file: pwsh-src/global.json
 
       - name: Bootstrap PowerShell
         shell: pwsh
         run: |
-          Import-Module "./PowerShell/build.psm1" -Force
+          Import-Module "./pwsh-src/build.psm1" -Force
           Start-PSBootstrap -Scenario DotNet
 
       - name: Build PowerShell
         shell: pwsh
         run: |
-          Import-Module "./PowerShell/build.psm1" -Force
+          Import-Module "./pwsh-src/build.psm1" -Force
           if ('${{matrix.os}}' -eq 'windows') {
             Switch-PSNugetConfig -Source Public
             $ModuleNugetConfig = @(
@@ -127,7 +127,7 @@ jobs:
               '  </disabledPackageSources>',
               '</configuration>'
             )
-            Set-Content -Path "./PowerShell/src/Modules/nuget.config" -Value $ModuleNugetConfig -Encoding utf8
+            Set-Content -Path "./pwsh-src/src/Modules/nuget.config" -Value $ModuleNugetConfig -Encoding utf8
           }
           $Runtime = "${{matrix.runtime-os}}-${{matrix.arch}}"
           $OutputPath = Join-Path $PWD "PowerShell-$Env:POWERSHELL_VERSION-${{matrix.os}}-${{matrix.arch}}"
@@ -152,3 +152,4 @@ jobs:
         with:
           name: PowerShell-${{env.POWERSHELL_VERSION}}-${{matrix.os}}-${{matrix.arch}}
           path: PowerShell-${{env.POWERSHELL_VERSION}}-${{matrix.os}}-${{matrix.arch}}.tar.gz
+

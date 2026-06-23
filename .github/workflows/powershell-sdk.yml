@@ -5,7 +5,7 @@ env:
   POWERSHELL_RELEASE_TAG: "v7.6.3"
   POWERSHELL_UPSTREAM_TAG: "upstream/v7.6.3"
   POWERSHELL_SOURCE_REPOSITORY: ${{ github.repository }}
-  POWERSHELL_SOURCE_REF: "release/v7.6.3"
+  POWERSHELL_SOURCE_REF: "downstream/v7.6.3"
   SDK_VENDOR_NAME: "Devolutions"
   SDK_PACKAGE_ID: "Devolutions.PowerShell.SDK"
   MULTI_PWSH_APPHOST_PACKAGE_ID: "Devolutions.MultiPwsh.Cli"
@@ -58,9 +58,9 @@ jobs:
               [string[]] $Arguments
             )
 
-            $Output = & git -C PowerShell @Arguments
+            $Output = & git -C pwsh-src @Arguments
             if ($LASTEXITCODE -ne 0) {
-              throw "git -C PowerShell $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
+              throw "git -C pwsh-src $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
             }
 
             return $Output
@@ -72,7 +72,7 @@ jobs:
               [string] $Ref
             )
 
-            & git -C PowerShell rev-parse --verify "$Ref^{commit}" *> $null
+            & git -C pwsh-src rev-parse --verify "$Ref^{commit}" *> $null
             return $LASTEXITCODE -eq 0
           }
 
@@ -94,7 +94,7 @@ jobs:
             throw "Expected PowerShell base tag '$BaseRef' was not found in the PowerShell checkout."
           }
 
-          & git -C PowerShell merge-base --is-ancestor "${BaseRef}^{commit}" HEAD
+          & git -C pwsh-src merge-base --is-ancestor "${BaseRef}^{commit}" HEAD
           if ($LASTEXITCODE -ne 0) {
             throw "PowerShell source ref '$Env:POWERSHELL_SOURCE_REF' is not based on '$BaseRef'."
           }
@@ -102,11 +102,11 @@ jobs:
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v5.3.0
         with:
-          global-json-file: PowerShell/global.json
+          global-json-file: pwsh-src/global.json
 
       - name: Build PowerShell apphost
         shell: pwsh
-        working-directory: PowerShell
+        working-directory: pwsh-src
         run: |
           $ErrorActionPreference = 'Stop'
           Import-Module .\build.psm1 -Force
@@ -409,7 +409,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $StagePath = "PowerShell/apphost-package/${{matrix.rid}}"
+          $StagePath = "pwsh-src/apphost-package/${{matrix.rid}}"
           foreach ($FileName in @("${{matrix.executable}}", "pwsh.dll", "pwsh.runtimeconfig.json")) {
             $FilePath = Join-Path $StagePath $FileName
             if (-not (Test-Path $FilePath -PathType Leaf)) {
@@ -421,14 +421,14 @@ jobs:
         uses: actions/upload-artifact@v7.0.1
         with:
           name: PowerShell-SDK-AppHost-${{matrix.rid}}
-          path: PowerShell/apphost-package/${{matrix.rid}}/*
+          path: pwsh-src/apphost-package/${{matrix.rid}}/*
 
       - name: Upload package runtime libraries
         if: ${{ matrix.rid == 'win-x64' || matrix.rid == 'linux-x64' }}
         uses: actions/upload-artifact@v7.0.1
         with:
           name: PowerShell-SDK-PackageRuntime-${{matrix.rid}}
-          path: PowerShell/package-runtime/${{matrix.rid}}/*
+          path: pwsh-src/package-runtime/${{matrix.rid}}/*
 
   build:
     name: PowerShell SDK [7.6.3]
@@ -453,9 +453,9 @@ jobs:
               [string[]] $Arguments
             )
 
-            $Output = & git -C PowerShell @Arguments
+            $Output = & git -C pwsh-src @Arguments
             if ($LASTEXITCODE -ne 0) {
-              throw "git -C PowerShell $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
+              throw "git -C pwsh-src $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
             }
 
             return $Output
@@ -467,7 +467,7 @@ jobs:
               [string] $Ref
             )
 
-            & git -C PowerShell rev-parse --verify "$Ref^{commit}" *> $null
+            & git -C pwsh-src rev-parse --verify "$Ref^{commit}" *> $null
             return $LASTEXITCODE -eq 0
           }
 
@@ -489,7 +489,7 @@ jobs:
             throw "Expected PowerShell base tag '$BaseRef' was not found in the PowerShell checkout."
           }
 
-          & git -C PowerShell merge-base --is-ancestor "${BaseRef}^{commit}" HEAD
+          & git -C pwsh-src merge-base --is-ancestor "${BaseRef}^{commit}" HEAD
           if ($LASTEXITCODE -ne 0) {
             throw "PowerShell source ref '$Env:POWERSHELL_SOURCE_REF' is not based on '$BaseRef'."
           }
@@ -497,7 +497,7 @@ jobs:
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v5.3.0
         with:
-          global-json-file: PowerShell/global.json
+          global-json-file: pwsh-src/global.json
 
       - name: Download PowerShell apphosts
         uses: actions/download-artifact@v8.0.1
@@ -523,7 +523,7 @@ jobs:
 
       - name: Build PowerShell SDK
         shell: pwsh
-        working-directory: PowerShell
+        working-directory: pwsh-src
         run: |
           $ErrorActionPreference = 'Stop'
           Import-Module .\build.psm1 -Force
@@ -747,7 +747,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           ./eng/Validate-PowerShellSdkPackage.ps1 `
-            -PackageDirectory ./PowerShell/package `
+            -PackageDirectory ./pwsh-src/package `
             -PowerShellVersion $Env:POWERSHELL_VERSION `
             -TargetFramework $Env:POWERSHELL_TARGET_FRAMEWORK `
             -RuntimeIdentifier linux-x64 `
@@ -758,4 +758,5 @@ jobs:
         uses: actions/upload-artifact@v7.0.1
         with:
           name: PowerShell-SDK-${{env.POWERSHELL_VERSION}}
-          path: "PowerShell/package/*.nupkg"
+          path: "pwsh-src/package/*.nupkg"
+

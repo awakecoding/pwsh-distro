@@ -39,7 +39,7 @@ if (-not $TagVersion.StartsWith('v', [System.StringComparison]::OrdinalIgnoreCas
 }
 
 if (-not $BranchName) {
-  $BranchName = "release/$TagVersion"
+  $BranchName = "downstream/$TagVersion"
 }
 
 if (-not $UpstreamTag) {
@@ -61,4 +61,4 @@ if ($PSCmdlet.ShouldProcess($BranchName, "Create from $UpstreamTag")) {
 
 Write-Output "Branch=$BranchName"
 Write-Output "BaseTag=$UpstreamTag"
-Write-Output "WorktreeCommand=git worktree add PowerShell-src $BranchName"
+Write-Output "WorktreeCommand=git worktree add pwsh-src-worktree $BranchName"

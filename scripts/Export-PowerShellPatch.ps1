@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [string] $RepoPath = 'PowerShell-src',
+  [string] $RepoPath = 'pwsh-src-worktree',
 
   [string] $Branch,
 
@@ -38,7 +38,7 @@ if (-not $Branch) {
 }
 
 if (-not $BaseTag) {
-  if ($Branch -match '^release/(v.+)$') {
+  if ($Branch -match '^downstream/(v.+)$') {
     $BaseTag = "upstream/$($Matches[1])"
   } else {
     throw "Could not infer base tag from branch '$Branch'. Pass -BaseTag explicitly."
@@ -46,7 +46,7 @@ if (-not $BaseTag) {
 }
 
 if (-not $ReleaseVersion) {
-  if ($Branch -match '^release/v(.+)$') {
+  if ($Branch -match '^downstream/v(.+)$') {
     $ReleaseVersion = "$($Matches[1]).0"
   } else {
     throw "Could not infer release version from branch '$Branch'. Pass -ReleaseVersion explicitly."

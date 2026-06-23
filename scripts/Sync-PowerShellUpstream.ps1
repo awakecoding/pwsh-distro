@@ -10,7 +10,9 @@ param(
 
   [switch] $SyncTags,
 
-  [switch] $Push
+  [switch] $Push,
+
+  [string] $TagIncludePattern = 'v[8-9].*|v7\.[6-9](\.|-|$|preview|rc)'
 )
 
 Set-StrictMode -Version 3.0
@@ -64,6 +66,10 @@ if ($Push) {
 }
 
 if ($SyncTags) {
+  # Fetch all upstream tags into refs/tags/upstream/*, then prune to those
+  # matching TagIncludePattern. Filtering after fetch keeps the refspec stable
+  # (git refspecs do not support arbitrary regexes) while avoiding deleting
+  # unrelated tags that may exist under refs/tags/upstream/* on the remote.
   Invoke-Git fetch $UpstreamRemote --prune --no-tags '+refs/tags/*:refs/tags/upstream/*'
   $Tags = @(git for-each-ref --format='%(refname)' refs/tags/upstream)
   if ($LASTEXITCODE -ne 0) {
@@ -75,10 +81,25 @@ if ($SyncTags) {
     return
   }
 
-  Write-Host "Synchronized $($Tags.Count) upstream tag(s) locally under refs/tags/upstream/*."
+  $Kept = @()
+  $Dropped = @()
+  foreach ($Tag in $Tags) {
+    $ShortName = $Tag -replace '^refs/tags/upstream/',''
+    if ($ShortName -match $TagIncludePattern) {
+      $Kept += $Tag
+    } else {
+      $Dropped += $Tag
+    }
+  }
+
+  if ($Dropped.Count -gt 0) {
+    Invoke-Git tag -d @($Dropped | ForEach-Object { $_ -replace '^refs/tags/','' })
+  }
+
+  Write-Host "Kept $($Kept.Count) upstream tag(s) matching '$TagIncludePattern'; dropped $($Dropped.Count) non-matching tag(s)."
 
   if ($Push) {
-    foreach ($Tag in $Tags) {
+    foreach ($Tag in $Kept) {
       if ($PSCmdlet.ShouldProcess($OriginRemote, "Push $Tag")) {
         Invoke-Git push $OriginRemote "$Tag`:$Tag"
       }

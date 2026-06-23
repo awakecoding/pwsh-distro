@@ -1,4 +1,4 @@
-[submodule "PowerShell"]
-	path = PowerShell
+[submodule "pwsh-src"]
+	path = pwsh-src
 	url = ./
-	branch = release/v7.6.3
+	branch = downstream/v7.6.3
