@@ -12,7 +12,7 @@ param(
 
   [switch] $Push,
 
-  [string] $TagIncludePattern = 'v[8-9].*|v7\.[6-9](\.|-|$|preview|rc)'
+  [string] $TagIncludePattern = '^v(?:[8-9]\.\d+\.\d+|7\.[6-9]\.\d+)$'
 )
 
 Set-StrictMode -Version 3.0
