@@ -2,6 +2,24 @@
 
 GitHub Actions workflows for building redistributable PowerShell artifacts from upstream or downstream-patched source. The primary target is a single vendored `Devolutions.PowerShell.SDK` package, and the secondary target is a self-contained PowerShell distribution archive.
 
+## Quick start
+
+This repository builds PowerShell from source. The full PowerShell source tree is pulled in as a git submodule at `pwsh-src/`, so cloning requires submodule recursion, and on Windows it requires long-path support enabled in git.
+
+```powershell
+# Windows only: enable long paths once per machine (PowerShell source has paths > 260 chars)
+git config --global core.longpaths true
+
+# Clone with the pinned PowerShell source submodule
+git clone --recursive https://github.com/awakecoding/pwsh-distro.git
+# Or, for an existing clone:
+# git submodule update --init --recursive
+```
+
+All workflows are manual and start from the GitHub Actions **Run workflow** button (see the Workflows table below). There is no local build entrypoint; the workflows are the build.
+
+> On Linux/macOS no long-path configuration is needed. On Windows, if `core.longpaths` is not enabled, the `pwsh-src` submodule checkout will fail with `Filename too long`. The workflows set this on their Windows runners automatically.
+
 ## Current pins
 
 | Component | Version |
@@ -30,6 +48,17 @@ All workflows are manual and can be started from the GitHub Actions **Run workfl
 ## Branching model
 
 This repository follows a downstream patch branch model inspired by `Devolutions/gsudo-distro`: `master` stays downstream-only, upstream PowerShell refs are mirrored under `upstream/*`, and source patches live on `downstream/vX.Y.Z` branches based on upstream release tags. The patched source is exposed on `master` as a same-repo submodule at `pwsh-src/` pinned to a commit on `downstream/vX.Y.Z`, so workflows build the exact reviewed source tree with a single `actions/checkout` using `submodules: true`. See [BRANCHING.md](BRANCHING.md) for the full branch, tag, submodule, and worktree flow.
+
+## Updating PowerShell versions
+
+When moving to a new upstream PowerShell release, the bump touches four surfaces in the same PR:
+
+1. Workflow `env` blocks in `.github/workflows/powershell-sdk.yml` and `.github/workflows/powershell.yml`: `POWERSHELL_VERSION`, `POWERSHELL_RELEASE_TAG`, `POWERSHELL_UPSTREAM_TAG`, and `POWERSHELL_SOURCE_REF`.
+2. `.gitmodules`: the `branch = downstream/vX.Y.Z` line under `[submodule "pwsh-src"]` (git does not expand variables in `.gitmodules`, so this must be edited literally).
+3. The `pwsh-src` submodule pointer on `master`, bumped to the new `downstream/vX.Y.Z` tip with `git submodule update --remote pwsh-src && git add pwsh-src`.
+4. The "Current pins" table above.
+
+Verify the upstream target framework from `pwsh-src/PowerShell.Common.props` after the bump and keep SDK packaging paths derived from that property instead of hardcoding `net*` folders.
 
 ## Notes
 

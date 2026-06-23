@@ -47,6 +47,10 @@ if (Test-GitRemote $UpstreamRemote) {
 }
 
 Invoke-Git fetch $UpstreamRemote --prune --no-tags
+# --no-tags is intentional: upstream PowerShell publishes bare vX.Y.Z tags that
+# would otherwise be fetched into refs/tags/vX.Y.Z and pollute the downstream
+# namespace. Upstream tags are mirrored only under refs/tags/upstream/* by the
+# SyncTags block below. Keep this flag whenever fetching from $UpstreamRemote.
 
 $RemoteBranchRef = "refs/remotes/$UpstreamRemote/$UpstreamBranch"
 Invoke-Git rev-parse --verify $RemoteBranchRef
