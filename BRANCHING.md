@@ -5,6 +5,7 @@
 - Keep downstream automation and packaging separate from the upstream PowerShell source tree.
 - Carry Devolutions source patches on explicit per-release branches based on upstream PowerShell release tags.
 - Keep upstream and downstream refs distinct so workflow pins are auditable.
+- Expose the patched source on `master` as a pinned submodule so workflows build the exact reviewed tree without a second checkout.
 
 ## Branches
 
@@ -43,7 +44,7 @@ Do not use plain `vX.Y.Z` downstream tags. Those names belong to upstream PowerS
    ```
 
 3. Add a linked source worktree for `release/v7.6.3` and apply downstream PowerShell source patches there.
-4. Update workflow pins on `master` so `POWERSHELL_SOURCE_REF` points to the desired `release/vX.Y.Z` branch while `POWERSHELL_RELEASE_TAG` remains the upstream PowerShell release tag.
+4. Bump the `PowerShell` submodule on `master` to the updated `release/vX.Y.Z` tip and update workflow pins so `POWERSHELL_SOURCE_REF` points to the desired `release/vX.Y.Z` branch while `POWERSHELL_RELEASE_TAG` remains the upstream PowerShell release tag.
 5. Run the PowerShell SDK workflow first, then the PowerShell distribution workflow if the SDK package is valid.
 6. Tag downstream releases as `vX.Y.Z.R` when publishing artifacts externally.
 
@@ -59,15 +60,35 @@ PowerShell workflows keep source checkout refs separate from release metadata:
 
 This prevents a downstream source branch such as `release/v7.6.3` from being passed to PowerShell build logic that expects an upstream release tag.
 
+## Source submodule
+
+`master` exposes the patched PowerShell source tree as a same-repository git submodule at path `PowerShell/`:
+
+```ini
+[submodule "PowerShell"]
+    path = PowerShell
+    url = ./
+    branch = release/v7.6.3
+```
+
+The submodule pins a specific commit on `release/vX.Y.Z`, not the branch tip. Bumping the pointer is a normal commit on `master` and is reviewable in the PR diff. Workflows check out the project with `submodules: true`, which is enough to populate `PowerShell/` using the default `GITHUB_TOKEN`; no second `actions/checkout` and no extra secrets are needed.
+
+After rebasing `release/vX.Y.Z` (for example with an AI-assisted rebase that force-pushes the patch branch), re-bump the submodule on `master` so the pinned commit matches the new tip:
+
+```powershell
+git submodule update --remote PowerShell
+git add PowerShell
+```
+
 ## Local source worktree
 
-Keep local source checkouts out of `master` by using a linked worktree:
+The `PowerShell/` submodule on `master` is the build source of truth, but it is a detached checkout of the pinned commit. For developing patches, use a linked worktree on the patch branch:
 
 ```powershell
 git worktree add PowerShell-src release/v7.6.3
 ```
 
-`PowerShell-src/` is ignored by this repository. Commit source patches in that worktree on the `release/vX.Y.Z` branch, not on `master`.
+`PowerShell-src/` is ignored by this repository. Commit source patches in that worktree on the `release/vX.Y.Z` branch, not on `master`, then bump the submodule pointer on `master` as described above.
 
 ## Patch export
 

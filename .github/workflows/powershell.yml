@@ -40,15 +40,10 @@ jobs:
             runtime-os: linux
   
     steps:
-      - name: Clone project
-        uses: actions/checkout@v7.0.0
-
-      - name: Clone PowerShell source ${{env.POWERSHELL_SOURCE_REF}}
+      - name: Clone project with PowerShell submodule
         uses: actions/checkout@v7.0.0
         with:
-          repository: ${{env.POWERSHELL_SOURCE_REPOSITORY}}
-          ref: ${{env.POWERSHELL_SOURCE_REF}}
-          path: PowerShell
+          submodules: true
           fetch-depth: 0
 
       - name: Verify PowerShell source ref
