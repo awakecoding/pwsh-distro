@@ -1,12 +1,13 @@
 # pwsh-distro
 
-GitHub Actions workflows for building redistributable PowerShell artifacts from upstream source. The primary target is a single vendored `Devolutions.PowerShell.SDK` package, and the secondary target is a self-contained PowerShell distribution archive.
+GitHub Actions workflows for building redistributable PowerShell artifacts from upstream or downstream-patched source. The primary target is a single vendored `Devolutions.PowerShell.SDK` package, and the secondary target is a self-contained PowerShell distribution archive.
 
 ## Current pins
 
 | Component | Version |
 | --- | --- |
-| PowerShell | `7.6.3` / `v7.6.3` |
+| PowerShell upstream release | `7.6.3` / `v7.6.3` |
+| PowerShell downstream source ref | `release/v7.6.3` based on `upstream/v7.6.3` |
 | PowerShell target framework | `net10.0` |
 | PowerShell SDK package ID | `Devolutions.PowerShell.SDK` |
 | multi-pwsh apphost package | `Devolutions.MultiPwsh.Cli` / `0.14.0` |
@@ -26,7 +27,13 @@ GitHub Actions workflows for building redistributable PowerShell artifacts from 
 
 All workflows are manual and can be started from the GitHub Actions **Run workflow** button.
 
+## Branching model
+
+This repository follows a downstream patch branch model inspired by `Devolutions/gsudo-distro`: `master` stays downstream-only, upstream PowerShell refs are mirrored under `upstream/*`, and source patches live on `release/vX.Y.Z` branches based on upstream release tags. The patched source is exposed on `master` as a same-repo submodule at `PowerShell/` pinned to a commit on `release/vX.Y.Z`, so workflows build the exact reviewed source tree with a single `actions/checkout` using `submodules: true`. See [BRANCHING.md](BRANCHING.md) for the full branch, tag, submodule, and worktree flow.
+
 ## Notes
+
+The PowerShell workflows check out this repository with `submodules: true` to populate `PowerShell/` from the pinned submodule commit on `release/vX.Y.Z`, while build metadata continues to use `POWERSHELL_RELEASE_TAG`. This allows downstream patch branches to be built without passing branch names to PowerShell build steps that expect upstream release tags. `POWERSHELL_SOURCE_REF` documents which patch branch the submodule tracks; bumping the submodule pointer on `master` is what actually moves the built source.
 
 The SDK workflow intentionally derives the target framework from upstream `PowerShell.Common.props` instead of hardcoding it, so future PowerShell updates only need the version pins refreshed. The SDK package is assembled from locally built PowerShell binaries plus package layouts from the official NuGet packages for the same PowerShell version, then `eng/Vendor-PowerShellSdkPackage.ps1` rewrites the NuGet package ID and vendor metadata to Devolutions.
 

@@ -1,0 +1,4 @@
+[submodule "PowerShell"]
+	path = PowerShell
+	url = ./
+	branch = release/v7.6.3

@@ -1,6 +1,7 @@
-PowerShell/
+PowerShell-src/
 dotnet-runtime/
 output/
 package/
+patchsets/
 *.nupkg
 *.tar.gz
