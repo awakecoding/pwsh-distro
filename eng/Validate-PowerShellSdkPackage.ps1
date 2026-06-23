@@ -71,6 +71,140 @@ function Add-ProjectProperty {
   [void] $PropertyGroup.AppendChild($Element)
 }
 
+function Assert-AppHostOutput {
+  param(
+    [Parameter(Mandatory)]
+    [string] $Directory,
+
+    [Parameter(Mandatory)]
+    [string] $ExecutableName,
+
+    [Parameter(Mandatory)]
+    [string] $Description
+  )
+
+  foreach ($FileName in @($ExecutableName, 'pwsh.dll', 'pwsh.runtimeconfig.json')) {
+    $OutputPath = Join-Path $Directory $FileName
+    if (-not (Test-Path $OutputPath -PathType Leaf)) {
+      throw "$Description is missing expected apphost file: $OutputPath"
+    }
+  }
+
+  foreach ($RelativeModulePath in @(
+      'Modules/Microsoft.PowerShell.Management/Microsoft.PowerShell.Management.psd1',
+      'Modules/Microsoft.PowerShell.Utility/Microsoft.PowerShell.Utility.psd1',
+      'Modules/Microsoft.PowerShell.Security/Microsoft.PowerShell.Security.psd1')) {
+    $OutputPath = Join-Path $Directory ($RelativeModulePath -replace '/', [System.IO.Path]::DirectorySeparatorChar)
+    if (-not (Test-Path $OutputPath -PathType Leaf)) {
+      throw "$Description is missing expected apphost module file: $OutputPath"
+    }
+  }
+}
+
+function Assert-RuntimeConfigMode {
+  param(
+    [Parameter(Mandatory)]
+    [string] $RuntimeConfigPath,
+
+    [Parameter(Mandatory)]
+    [bool] $SelfContained,
+
+    [Parameter(Mandatory)]
+    [string] $Description
+  )
+
+  $RuntimeConfig = Get-Content -LiteralPath $RuntimeConfigPath -Raw
+  if ($SelfContained) {
+    if ($RuntimeConfig -notmatch '"includedFrameworks"\s*:') {
+      throw "$Description runtimeconfig is not self-contained; missing includedFrameworks: $RuntimeConfigPath"
+    }
+    if ($RuntimeConfig -match '"frameworks?"\s*:') {
+      throw "$Description runtimeconfig still contains framework-dependent entries: $RuntimeConfigPath"
+    }
+    return
+  }
+
+  if ($RuntimeConfig -match '"includedFrameworks"\s*:') {
+    throw "$Description runtimeconfig was unexpectedly rewritten as self-contained: $RuntimeConfigPath"
+  }
+  if ($RuntimeConfig -notmatch '"frameworks?"\s*:') {
+    throw "$Description runtimeconfig does not contain framework-dependent entries: $RuntimeConfigPath"
+  }
+}
+
+function Invoke-PwshVersionCheck {
+  param(
+    [Parameter(Mandatory)]
+    [string] $PwshPath,
+
+    [Parameter(Mandatory)]
+    [string] $ExpectedVersion
+  )
+
+  $PwshOutput = & $PwshPath -NoLogo -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'
+  if ($LASTEXITCODE -ne 0) {
+    throw "$PwshPath failed with exit code $LASTEXITCODE"
+  }
+  $PwshVersion = [string] ($PwshOutput | Select-Object -Last 1)
+  if ($PwshVersion.Trim() -ne $ExpectedVersion) {
+    throw "$PwshPath reported PowerShell version '$PwshVersion', expected '$ExpectedVersion'"
+  }
+
+  return $PwshVersion.Trim()
+}
+
+function Invoke-PwshModuleProbe {
+  param(
+    [Parameter(Mandatory)]
+    [string] $PwshPath,
+
+    [Parameter(Mandatory)]
+    [string] $ModuleRoot
+  )
+
+  $PreviousPSModulePath = $Env:PSModulePath
+  $PreviousExpectedModuleRoot = $Env:PowerShellSDKExpectedModuleRoot
+  try {
+    $Env:PSModulePath = ''
+    $Env:PowerShellSDKExpectedModuleRoot = $ModuleRoot
+    $ModuleProbe = @'
+$ErrorActionPreference = 'Stop'
+$expectedModuleRoot = $env:PowerShellSDKExpectedModuleRoot
+foreach ($moduleName in 'Microsoft.PowerShell.Management', 'Microsoft.PowerShell.Utility') {
+  $module = $null
+  foreach ($candidate in Get-Module -ListAvailable $moduleName) {
+    $module = $candidate
+    break
+  }
+  if ($null -eq $module) {
+    throw "Module '$moduleName' is not available"
+  }
+
+  if (-not $module.Path.StartsWith($expectedModuleRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "Module '$moduleName' was loaded from '$($module.Path)' instead of '$expectedModuleRoot'"
+  }
+}
+
+$getProcess = Get-Command Get-Process -ErrorAction Stop
+if ($getProcess.Source -ne 'Microsoft.PowerShell.Management') {
+  throw "Get-Process resolved from '$($getProcess.Source)' instead of Microsoft.PowerShell.Management"
+}
+
+$selectObject = Get-Command Select-Object -ErrorAction Stop
+if ($selectObject.Source -ne 'Microsoft.PowerShell.Utility') {
+  throw "Select-Object resolved from '$($selectObject.Source)' instead of Microsoft.PowerShell.Utility"
+}
+'@
+    $PwshModuleProbeOutput = & $PwshPath -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command $ModuleProbe
+    if ($LASTEXITCODE -ne 0) {
+      throw "$PwshPath failed module probe with exit code $LASTEXITCODE"
+    }
+  } finally {
+    $Env:PSModulePath = $PreviousPSModulePath
+    $Env:PowerShellSDKExpectedModuleRoot = $PreviousExpectedModuleRoot
+  }
+}
+
 function Read-ZipEntryText {
   param(
     [Parameter(Mandatory)]
@@ -307,21 +441,8 @@ foreach (PSObject result in ps.Invoke())
 
   $OutputDirectory = Join-Path $SampleDirectory (Join-Path 'bin' (Join-Path 'Debug' (Join-Path $TargetFramework $RuntimeIdentifier)))
   $PwshPath = Join-Path $OutputDirectory $ExecutableName
-  foreach ($FileName in @($ExecutableName, 'pwsh.dll', 'pwsh.runtimeconfig.json')) {
-    $OutputPath = Join-Path $OutputDirectory $FileName
-    if (-not (Test-Path $OutputPath -PathType Leaf)) {
-      throw "Sample app output is missing expected apphost file: $OutputPath"
-    }
-  }
-  foreach ($RelativeModulePath in @(
-      'Modules/Microsoft.PowerShell.Management/Microsoft.PowerShell.Management.psd1',
-      'Modules/Microsoft.PowerShell.Utility/Microsoft.PowerShell.Utility.psd1',
-      'Modules/Microsoft.PowerShell.Security/Microsoft.PowerShell.Security.psd1')) {
-    $OutputPath = Join-Path $OutputDirectory ($RelativeModulePath -replace '/', [System.IO.Path]::DirectorySeparatorChar)
-    if (-not (Test-Path $OutputPath -PathType Leaf)) {
-      throw "Sample app output is missing expected apphost module file: $OutputPath"
-    }
-  }
+  Assert-AppHostOutput -Directory $OutputDirectory -ExecutableName $ExecutableName -Description 'Sample app output'
+  Assert-RuntimeConfigMode -RuntimeConfigPath (Join-Path $OutputDirectory 'pwsh.runtimeconfig.json') -SelfContained $false -Description 'Sample app output'
 
   $AppOutput = & dotnet run --project $ProjectPath --no-build
   if ($LASTEXITCODE -ne 0) {
@@ -336,72 +457,23 @@ foreach (PSObject result in ps.Invoke())
 
   $PublishDirectory = Join-Path $SampleDirectory (Join-Path 'bin' (Join-Path 'Release' (Join-Path $TargetFramework (Join-Path $RuntimeIdentifier 'publish'))))
   $PublishedPwshPath = Join-Path $PublishDirectory $ExecutableName
-  foreach ($FileName in @($ExecutableName, 'pwsh.dll', 'pwsh.runtimeconfig.json')) {
-    $PublishedPath = Join-Path $PublishDirectory $FileName
-    if (-not (Test-Path $PublishedPath -PathType Leaf)) {
-      throw "Sample publish output is missing expected apphost file: $PublishedPath"
-    }
-  }
-  foreach ($RelativeModulePath in @(
-      'Modules/Microsoft.PowerShell.Management/Microsoft.PowerShell.Management.psd1',
-      'Modules/Microsoft.PowerShell.Utility/Microsoft.PowerShell.Utility.psd1',
-      'Modules/Microsoft.PowerShell.Security/Microsoft.PowerShell.Security.psd1')) {
-    $PublishedPath = Join-Path $PublishDirectory ($RelativeModulePath -replace '/', [System.IO.Path]::DirectorySeparatorChar)
-    if (-not (Test-Path $PublishedPath -PathType Leaf)) {
-      throw "Sample publish output is missing expected apphost module file: $PublishedPath"
-    }
-  }
+  Assert-AppHostOutput -Directory $PublishDirectory -ExecutableName $ExecutableName -Description 'Sample self-contained publish output'
+  Assert-RuntimeConfigMode -RuntimeConfigPath (Join-Path $PublishDirectory 'pwsh.runtimeconfig.json') -SelfContained $true -Description 'Sample self-contained publish output'
+  $PwshVersion = Invoke-PwshVersionCheck -PwshPath $PublishedPwshPath -ExpectedVersion $PowerShellVersion
+  Invoke-PwshModuleProbe -PwshPath $PublishedPwshPath -ModuleRoot (Join-Path $PublishDirectory 'Modules')
 
-  $PwshOutput = & $PublishedPwshPath -NoLogo -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'
-  if ($LASTEXITCODE -ne 0) {
-    throw "$PublishedPwshPath failed with exit code $LASTEXITCODE"
-  }
-  $PwshVersion = [string] ($PwshOutput | Select-Object -Last 1)
-  if ($PwshVersion.Trim() -ne $PowerShellVersion) {
-    throw "$PublishedPwshPath reported PowerShell version '$PwshVersion', expected '$PowerShellVersion'"
-  }
-
-  $PreviousPSModulePath = $Env:PSModulePath
-  $PreviousExpectedModuleRoot = $Env:PowerShellSDKExpectedModuleRoot
-  try {
-    $Env:PSModulePath = ''
-    $Env:PowerShellSDKExpectedModuleRoot = Join-Path $PublishDirectory 'Modules'
-    $ModuleProbe = @'
-$ErrorActionPreference = 'Stop'
-$expectedModuleRoot = $env:PowerShellSDKExpectedModuleRoot
-foreach ($moduleName in 'Microsoft.PowerShell.Management', 'Microsoft.PowerShell.Utility') {
-  $module = Get-Module -ListAvailable $moduleName | Select-Object -First 1
-  if ($null -eq $module) {
-    throw "Module '$moduleName' is not available"
-  }
-
-  if (-not $module.Path.StartsWith($expectedModuleRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-    throw "Module '$moduleName' was loaded from '$($module.Path)' instead of '$expectedModuleRoot'"
-  }
-}
-
-$getProcess = Get-Command Get-Process -ErrorAction Stop
-if ($getProcess.Source -ne 'Microsoft.PowerShell.Management') {
-  throw "Get-Process resolved from '$($getProcess.Source)' instead of Microsoft.PowerShell.Management"
-}
-
-$selectObject = Get-Command Select-Object -ErrorAction Stop
-if ($selectObject.Source -ne 'Microsoft.PowerShell.Utility') {
-  throw "Select-Object resolved from '$($selectObject.Source)' instead of Microsoft.PowerShell.Utility"
-}
-'@
-    $PwshModuleProbeOutput = & $PublishedPwshPath -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command $ModuleProbe
-    if ($LASTEXITCODE -ne 0) {
-      throw "$PublishedPwshPath failed module probe with exit code $LASTEXITCODE"
-    }
-  } finally {
-    $Env:PSModulePath = $PreviousPSModulePath
-    $Env:PowerShellSDKExpectedModuleRoot = $PreviousExpectedModuleRoot
-  }
+  $FrameworkDependentPublishDirectory = Join-Path $SampleDirectory (Join-Path 'bin' (Join-Path 'Release' (Join-Path $TargetFramework (Join-Path $RuntimeIdentifier 'publish-framework-dependent'))))
+  Remove-Item $FrameworkDependentPublishDirectory -Recurse -Force -ErrorAction SilentlyContinue
+  Invoke-DotNet @('publish', $ProjectPath, '--nologo', '--verbosity', 'minimal', '-c', 'Release', '-r', $RuntimeIdentifier, '--self-contained', 'false', '-o', $FrameworkDependentPublishDirectory)
+  $FrameworkDependentPwshPath = Join-Path $FrameworkDependentPublishDirectory $ExecutableName
+  Assert-AppHostOutput -Directory $FrameworkDependentPublishDirectory -ExecutableName $ExecutableName -Description 'Sample framework-dependent publish output'
+  Assert-RuntimeConfigMode -RuntimeConfigPath (Join-Path $FrameworkDependentPublishDirectory 'pwsh.runtimeconfig.json') -SelfContained $false -Description 'Sample framework-dependent publish output'
+  [void] (Invoke-PwshVersionCheck -PwshPath $FrameworkDependentPwshPath -ExpectedVersion $PowerShellVersion)
 
   Write-Host "Validated $PackageId $PowerShellVersion from $($Package.FullName)"
   Write-Host "Sample app imported vendored PowerShell SDK $($AppVersion.Trim())"
-  Write-Host "Sample publish apphost reported PowerShell $($PwshVersion.Trim()): $PublishedPwshPath"
+  Write-Host "Sample self-contained publish apphost reported PowerShell $PwshVersion`: $PublishedPwshPath"
+  Write-Host "Sample framework-dependent publish apphost reported PowerShell $PowerShellVersion`: $FrameworkDependentPwshPath"
 } finally {
   Set-Location $PreviousLocation
   $Env:NUGET_PACKAGES = $PreviousNuGetPackages
