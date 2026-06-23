@@ -4,21 +4,25 @@ GitHub Actions workflows for building redistributable PowerShell artifacts from 
 
 ## Quick start
 
-This repository builds PowerShell from source. The full PowerShell source tree is pulled in as a git submodule at `pwsh-src/`, so cloning requires submodule recursion, and on Windows it requires long-path support enabled in git.
+This repository builds PowerShell from source. The full PowerShell source tree is pulled in as a git submodule at `pwsh-src/`, so the checkout must initialize submodules, and on Windows it requires long-path support enabled in git.
 
 ```powershell
-# Windows only: enable long paths once per machine (PowerShell source has paths > 260 chars)
-git config --global core.longpaths true
-
-# Clone with the pinned PowerShell source submodule
-git clone --recursive https://github.com/awakecoding/pwsh-distro.git
-# Or, for an existing clone:
-# git submodule update --init --recursive
+git clone https://github.com/awakecoding/pwsh-distro.git
+cd pwsh-distro
+.\scripts\Initialize-Repository.ps1
 ```
 
-All workflows are manual and start from the GitHub Actions **Run workflow** button (see the Workflows table below). There is no local build entrypoint; the workflows are the build.
+All workflows are manual and start from the GitHub Actions **Run workflow** button (see the Workflows table below). The workflows are the authoritative release builds.
 
-> On Linux/macOS no long-path configuration is needed. On Windows, if `core.longpaths` is not enabled, the `pwsh-src` submodule checkout will fail with `Filename too long`. The workflows set this on their Windows runners automatically.
+> On Linux/macOS no long-path configuration is needed. On Windows, if `core.longpaths` is not enabled, the `pwsh-src` submodule checkout will fail with `Filename too long`. `scripts\Initialize-Repository.ps1` enables it before initializing the submodule. The workflows set this on their Windows runners automatically.
+
+To build a local, current-RID SDK package for smoke testing outside Actions:
+
+```powershell
+.\scripts\Build-LocalPowerShellSdk.ps1 -Validate
+```
+
+The local script writes under `output\local-sdk\<rid>\` and produces a single-RID validation package. The GitHub Actions SDK workflow remains the authoritative multi-RID package build.
 
 ## Current pins
 
@@ -77,5 +81,7 @@ The SDK package also includes apphost files for `win-x64`, `linux-x64`, `linux-a
 ```
 
 The package selects `$(RuntimeIdentifier)` first, then falls back to the SDK host runtime identifier. Set `PowerShellSDKAppHostRuntimeIdentifier` to override that selection explicitly. Unsupported runtime identifiers fail the build with a clear error instead of silently omitting apphost files. The apphost output is intended for running scripts with the core built-in modules from `$PSHOME/Modules`; it is not a full PowerShell distribution archive with localized resources, help content, or optional gallery modules.
+
+During NuGet packing, upstream `Microsoft.PowerShell.SDK` content file/reference metadata can emit NU5100/NU5131 package analysis warnings. The SDK workflow treats package validation as the source of truth: the generated sample must restore only the vendored PowerShell package ID, build, publish framework-dependent and self-contained outputs, execute `pwsh`, and load copied built-in modules.
 
 Generated source checkouts and build artifacts are not part of this repository.

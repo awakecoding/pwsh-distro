@@ -1,4 +1,135 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <UsingTask TaskName="PowerShellSDKRewriteSelfContainedRuntimeConfig"
+             TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <RuntimeConfigPath ParameterType="System.String" Required="true" />
+      <ApplicationRuntimeConfigPath ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" />
+      <Using Namespace="System.Collections.Generic" />
+      <Using Namespace="System.IO" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        if (!File.Exists(RuntimeConfigPath))
+        {
+          Log.LogError("PowerShell apphost runtimeconfig was not found: {0}", RuntimeConfigPath);
+          return false;
+        }
+
+        if (!File.Exists(ApplicationRuntimeConfigPath))
+        {
+          Log.LogError("Application runtimeconfig was not found: {0}", ApplicationRuntimeConfigPath);
+          return false;
+        }
+
+        string powerShellRuntimeConfig = File.ReadAllText(RuntimeConfigPath);
+        string applicationRuntimeConfig = File.ReadAllText(ApplicationRuntimeConfigPath);
+        var includedFrameworkVersions = new Dictionary<string, string>(StringComparer.Ordinal);
+        string fallbackFrameworkVersion = null;
+        foreach (System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(
+          applicationRuntimeConfig,
+          "\"name\"\\s*:\\s*\"([^\"]+)\"\\s*,\\s*\"version\"\\s*:\\s*\"([^\"]+)\"",
+          System.Text.RegularExpressions.RegexOptions.Singleline))
+        {
+          string frameworkName = match.Groups[1].Value;
+          string frameworkVersion = match.Groups[2].Value;
+          if (String.IsNullOrWhiteSpace(frameworkName) || String.IsNullOrWhiteSpace(frameworkVersion))
+          {
+            continue;
+          }
+
+          includedFrameworkVersions[frameworkName] = frameworkVersion;
+          if (fallbackFrameworkVersion == null)
+          {
+            fallbackFrameworkVersion = frameworkVersion;
+          }
+        }
+
+        if (fallbackFrameworkVersion == null)
+        {
+          Log.LogError("Application runtimeconfig includedFrameworks did not contain any framework versions: {0}", ApplicationRuntimeConfigPath);
+          return false;
+        }
+
+        var requiredFrameworkNames = new List<string>();
+        foreach (System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(
+          powerShellRuntimeConfig,
+          "\"name\"\\s*:\\s*\"([^\"]+)\"",
+          System.Text.RegularExpressions.RegexOptions.Singleline))
+        {
+          string frameworkName = match.Groups[1].Value;
+          if (!String.IsNullOrWhiteSpace(frameworkName) && !requiredFrameworkNames.Contains(frameworkName))
+          {
+            requiredFrameworkNames.Add(frameworkName);
+          }
+        }
+
+        if (requiredFrameworkNames.Count == 0)
+        {
+          Log.LogMessage(MessageImportance.Low, "PowerShell apphost runtimeconfig has no framework references to rewrite: {0}", RuntimeConfigPath);
+          return true;
+        }
+
+        var includedFrameworkBuilder = new System.Text.StringBuilder();
+        includedFrameworkBuilder.Append("[");
+        foreach (string frameworkName in requiredFrameworkNames)
+        {
+          string frameworkVersion;
+          if (!includedFrameworkVersions.TryGetValue(frameworkName, out frameworkVersion))
+          {
+            frameworkVersion = fallbackFrameworkVersion;
+          }
+
+          if (includedFrameworkBuilder.Length > 1)
+          {
+            includedFrameworkBuilder.Append(",");
+          }
+
+          includedFrameworkBuilder.AppendLine();
+          includedFrameworkBuilder.Append("      {");
+          includedFrameworkBuilder.AppendLine();
+          includedFrameworkBuilder.Append("        \"name\": \"");
+          includedFrameworkBuilder.Append(frameworkName.Replace("\\", "\\\\").Replace("\"", "\\\""));
+          includedFrameworkBuilder.Append("\",");
+          includedFrameworkBuilder.AppendLine();
+          includedFrameworkBuilder.Append("        \"version\": \"");
+          includedFrameworkBuilder.Append(frameworkVersion.Replace("\\", "\\\\").Replace("\"", "\\\""));
+          includedFrameworkBuilder.Append("\"");
+          includedFrameworkBuilder.AppendLine();
+          includedFrameworkBuilder.Append("      }");
+        }
+        includedFrameworkBuilder.AppendLine();
+        includedFrameworkBuilder.Append("    ]");
+
+        string rewrittenRuntimeConfig = System.Text.RegularExpressions.Regex.Replace(
+          powerShellRuntimeConfig,
+          "\\s*\"framework\"\\s*:\\s*\\{[\\s\\S]*?\\}\\s*,",
+          "",
+          System.Text.RegularExpressions.RegexOptions.Singleline);
+        rewrittenRuntimeConfig = System.Text.RegularExpressions.Regex.Replace(
+          rewrittenRuntimeConfig,
+          "\\s*\"frameworks\"\\s*:\\s*\\[[\\s\\S]*?\\]\\s*,",
+          "",
+          System.Text.RegularExpressions.RegexOptions.Singleline);
+
+        string rewrittenWithIncludedFrameworks = System.Text.RegularExpressions.Regex.Replace(
+          rewrittenRuntimeConfig,
+          "(\"tfm\"\\s*:\\s*\"[^\"]+\"\\s*,)",
+          "$1" + Environment.NewLine + "    \"includedFrameworks\": " + includedFrameworkBuilder.ToString() + ",",
+          System.Text.RegularExpressions.RegexOptions.Singleline);
+        if (Object.ReferenceEquals(rewrittenRuntimeConfig, rewrittenWithIncludedFrameworks) || rewrittenRuntimeConfig == rewrittenWithIncludedFrameworks)
+        {
+          Log.LogError("PowerShell apphost runtimeconfig does not contain a tfm property: {0}", RuntimeConfigPath);
+          return false;
+        }
+
+        File.WriteAllText(RuntimeConfigPath, rewrittenWithIncludedFrameworks);
+        Log.LogMessage(MessageImportance.High, "Rewrote PowerShell apphost runtimeconfig for self-contained publish: {0}", RuntimeConfigPath);
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
   <PropertyGroup>
     <PowerShellSDKIncludeAppHost Condition="'$(PowerShellSDKIncludeAppHost)' == ''">false</PowerShellSDKIncludeAppHost>
   </PropertyGroup>
@@ -68,5 +199,13 @@
           Condition="'$(PowerShellSDKIncludeAppHost)' == 'true' or '$(PowerShellSDKIncludeAppHost)' == 'True'">
     <Exec Command="chmod +x &quot;$(PublishDir)pwsh&quot;"
           Condition="'$(OS)' != 'Windows_NT' and Exists('$(PublishDir)pwsh')" />
+  </Target>
+
+  <Target Name="PowerShellSDKRewriteSelfContainedPublishedRuntimeConfig"
+          AfterTargets="Publish"
+          Condition="('$(PowerShellSDKIncludeAppHost)' == 'true' or '$(PowerShellSDKIncludeAppHost)' == 'True') and ('$(SelfContained)' == 'true' or '$(SelfContained)' == 'True')">
+    <PowerShellSDKRewriteSelfContainedRuntimeConfig
+      RuntimeConfigPath="$(PublishDir)pwsh.runtimeconfig.json"
+      ApplicationRuntimeConfigPath="$(PublishDir)$(AssemblyName).runtimeconfig.json" />
   </Target>
 </Project>
