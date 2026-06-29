@@ -222,9 +222,12 @@
       <_PowerShellSDKRuntimeNativeSharedPayloadRid Condition="'$(_PowerShellSDKRuntimeNativeSharedPayloadRid)' == 'win7-x64'">win-x64</_PowerShellSDKRuntimeNativeSharedPayloadRid>
       <_PowerShellSDKRuntimeNativeSharedPayloadGroup>unix</_PowerShellSDKRuntimeNativeSharedPayloadGroup>
       <_PowerShellSDKRuntimeNativeSharedPayloadGroup Condition="$([System.String]::Copy('$(_PowerShellSDKRuntimeNativeSharedPayloadRid)').StartsWith('win'))">win</_PowerShellSDKRuntimeNativeSharedPayloadGroup>
+      <_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework Condition="'$(PowerShellSDKRuntimeNativeSharedPayloadTargetFramework)' != ''">$(PowerShellSDKRuntimeNativeSharedPayloadTargetFramework)</_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework>
+      <_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework Condition="'$(_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework)' == '' and '$(TargetFrameworkIdentifier)' == '.NETCoreApp' and '$(TargetFrameworkVersion)' != ''">net$([System.Text.RegularExpressions.Regex]::Replace('$(TargetFrameworkVersion)', '^v', ''))</_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework>
+      <_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework Condition="'$(_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework)' == ''">$(TargetFramework)</_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework>
       <_PowerShellSDKRuntimeNativeSharedAppHostSourceDir>$(MSBuildThisFileDirectory)../tools/apphost/$(_PowerShellSDKRuntimeNativeSharedPayloadRid)/</_PowerShellSDKRuntimeNativeSharedAppHostSourceDir>
-      <_PowerShellSDKRuntimeNativeSharedModuleSourceDir>$(MSBuildThisFileDirectory)../contentFiles/any/any/runtimes/$(_PowerShellSDKRuntimeNativeSharedPayloadGroup)/lib/$(TargetFramework)/Modules/</_PowerShellSDKRuntimeNativeSharedModuleSourceDir>
-      <_PowerShellSDKRuntimeNativeSharedRuntimeSourceDir>$(MSBuildThisFileDirectory)..\runtimes\$(_PowerShellSDKRuntimeNativeSharedPayloadGroup)\lib\$(TargetFramework)\</_PowerShellSDKRuntimeNativeSharedRuntimeSourceDir>
+      <_PowerShellSDKRuntimeNativeSharedModuleSourceDir>$(MSBuildThisFileDirectory)../contentFiles/any/any/runtimes/$(_PowerShellSDKRuntimeNativeSharedPayloadGroup)/lib/$(_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework)/Modules/</_PowerShellSDKRuntimeNativeSharedModuleSourceDir>
+      <_PowerShellSDKRuntimeNativeSharedRuntimeSourceDir>$(MSBuildThisFileDirectory)..\runtimes\$(_PowerShellSDKRuntimeNativeSharedPayloadGroup)\lib\$(_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework)\</_PowerShellSDKRuntimeNativeSharedRuntimeSourceDir>
     </PropertyGroup>
 
     <Error Condition="'$(_PowerShellSDKRuntimeNativeSharedPayloadRid)' == ''"
@@ -232,9 +235,9 @@
     <Error Condition="!Exists('$(_PowerShellSDKRuntimeNativeSharedAppHostSourceDir)')"
            Text="PowerShellSDKIncludeRuntimeNativeAppHosts is true, but this PowerShell SDK package does not include shared apphost payload files for '$(_PowerShellSDKRuntimeNativeSharedPayloadRid)'." />
     <Error Condition="!Exists('$(_PowerShellSDKRuntimeNativeSharedModuleSourceDir)')"
-           Text="PowerShellSDKIncludeRuntimeNativeAppHosts is true, but this PowerShell SDK package does not include module files for runtime group '$(_PowerShellSDKRuntimeNativeSharedPayloadGroup)' and target framework '$(TargetFramework)'." />
+           Text="PowerShellSDKIncludeRuntimeNativeAppHosts is true, but this PowerShell SDK package does not include module files for runtime group '$(_PowerShellSDKRuntimeNativeSharedPayloadGroup)' and shared payload target framework '$(_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework)'." />
     <Error Condition="!Exists('$(_PowerShellSDKRuntimeNativeSharedRuntimeSourceDir)')"
-           Text="PowerShellSDKIncludeRuntimeNativeAppHosts is true, but this PowerShell SDK package does not include runtime files for runtime group '$(_PowerShellSDKRuntimeNativeSharedPayloadGroup)' and target framework '$(TargetFramework)'." />
+           Text="PowerShellSDKIncludeRuntimeNativeAppHosts is true, but this PowerShell SDK package does not include runtime files for runtime group '$(_PowerShellSDKRuntimeNativeSharedPayloadGroup)' and shared payload target framework '$(_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework)'." />
 
     <ItemGroup>
       <_PowerShellSDKRuntimeNativeSharedAppHostFile Include="$(_PowerShellSDKRuntimeNativeSharedAppHostSourceDir)pwsh.dll;$(_PowerShellSDKRuntimeNativeSharedAppHostSourceDir)pwsh.runtimeconfig.json" />

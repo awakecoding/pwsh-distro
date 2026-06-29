@@ -506,6 +506,7 @@ $EmbeddedPowerShellPackageIds = @(
 $ExecutableName = if ($RuntimeIdentifier -like 'win-*') { 'pwsh.exe' } else { 'pwsh' }
 $RuntimeAssetGroup = if ($RuntimeIdentifier -like 'win-*') { 'win' } else { 'unix' }
 $RuntimeNativeValidationRids = if ($RuntimeAssetGroup -eq 'win') { @('win-x64', 'win-arm64') } else { @($RuntimeIdentifier) }
+$SampleTargetFramework = if ($RuntimeAssetGroup -eq 'win') { "$TargetFramework-windows10.0.19041" } else { $TargetFramework }
 $ExpectedPackageEntries = @(
   "buildTransitive/$PackageId.targets",
   "tools/apphost/$RuntimeIdentifier/$ExecutableName",
@@ -653,6 +654,12 @@ foreach (PSObject result in ps.Invoke())
 
   [xml] $Project = Get-Content -LiteralPath $ProjectPath
   $PropertyGroup = @($Project.Project.PropertyGroup)[0]
+  $TargetFrameworkElement = $PropertyGroup.SelectSingleNode('TargetFramework')
+  if ($TargetFrameworkElement) {
+    $TargetFrameworkElement.InnerText = $SampleTargetFramework
+  } else {
+    Add-ProjectProperty -Project $Project -PropertyGroup $PropertyGroup -Name 'TargetFramework' -Value $SampleTargetFramework
+  }
   Add-ProjectProperty -Project $Project -PropertyGroup $PropertyGroup -Name 'RuntimeIdentifier' -Value $RuntimeIdentifier
   Add-ProjectProperty -Project $Project -PropertyGroup $PropertyGroup -Name 'PowerShellSDKIncludeRuntimeNativeAppHosts' -Value 'true'
   Add-ProjectProperty -Project $Project -PropertyGroup $PropertyGroup -Name 'PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers' -Value ($RuntimeNativeValidationRids -join ';')
@@ -687,7 +694,7 @@ foreach (PSObject result in ps.Invoke())
 
   Invoke-DotNet @('build', $ProjectPath, '--no-restore', '--nologo', '--verbosity', 'minimal')
 
-  $OutputDirectory = Join-Path $SampleDirectory (Join-Path 'bin' (Join-Path 'Debug' (Join-Path $TargetFramework $RuntimeIdentifier)))
+  $OutputDirectory = Join-Path $SampleDirectory (Join-Path 'bin' (Join-Path 'Debug' (Join-Path $SampleTargetFramework $RuntimeIdentifier)))
   Assert-SharedPowerShellOutput -Directory $OutputDirectory -SelfContained $false -Description 'Sample app output'
   Assert-SharedPackagePayloadPreserved -RestoredSdkPath $RestoredSdkPath -Directory $OutputDirectory -RuntimeAssetGroup $RuntimeAssetGroup -Description 'Sample app output'
   foreach ($RuntimeNativeRid in $RuntimeNativeValidationRids) {
@@ -711,7 +718,7 @@ foreach (PSObject result in ps.Invoke())
 
   Invoke-DotNet @('publish', $ProjectPath, '--nologo', '--verbosity', 'minimal', '-c', 'Release', '-r', $RuntimeIdentifier, '--self-contained', 'true')
 
-  $PublishDirectory = Join-Path $SampleDirectory (Join-Path 'bin' (Join-Path 'Release' (Join-Path $TargetFramework (Join-Path $RuntimeIdentifier 'publish'))))
+  $PublishDirectory = Join-Path $SampleDirectory (Join-Path 'bin' (Join-Path 'Release' (Join-Path $SampleTargetFramework (Join-Path $RuntimeIdentifier 'publish'))))
   Assert-SharedPowerShellOutput -Directory $PublishDirectory -SelfContained $true -Description 'Sample self-contained publish output'
   Assert-SharedPackagePayloadPreserved -RestoredSdkPath $RestoredSdkPath -Directory $PublishDirectory -RuntimeAssetGroup $RuntimeAssetGroup -Description 'Sample self-contained publish output'
   foreach ($RuntimeNativeRid in $RuntimeNativeValidationRids) {
@@ -723,7 +730,7 @@ foreach (PSObject result in ps.Invoke())
     }
   }
 
-  $FrameworkDependentPublishDirectory = Join-Path $SampleDirectory (Join-Path 'bin' (Join-Path 'Release' (Join-Path $TargetFramework (Join-Path $RuntimeIdentifier 'publish-framework-dependent'))))
+  $FrameworkDependentPublishDirectory = Join-Path $SampleDirectory (Join-Path 'bin' (Join-Path 'Release' (Join-Path $SampleTargetFramework (Join-Path $RuntimeIdentifier 'publish-framework-dependent'))))
   Remove-Item $FrameworkDependentPublishDirectory -Recurse -Force -ErrorAction SilentlyContinue
   Invoke-DotNet @('publish', $ProjectPath, '--nologo', '--verbosity', 'minimal', '-c', 'Release', '-r', $RuntimeIdentifier, '--self-contained', 'false', '-o', $FrameworkDependentPublishDirectory)
   Assert-SharedPowerShellOutput -Directory $FrameworkDependentPublishDirectory -SelfContained $false -Description 'Sample framework-dependent publish output'
