@@ -636,6 +636,35 @@ if ($selectObject.Source -ne 'Microsoft.PowerShell.Utility') {
   }
 }
 
+function Invoke-PwshStartJobProbe {
+  param(
+    [Parameter(Mandatory)]
+    [string] $PwshPath
+  )
+
+  $StartJobProbe = @'
+$ErrorActionPreference = 'Stop'
+$job = Start-Job -ScriptBlock { 21 * 2 }
+try {
+  $completedJob = Wait-Job -Job $job -Timeout 30
+  if ($null -eq $completedJob) {
+    throw "Start-Job probe did not complete before the timeout"
+  }
+
+  $result = Receive-Job -Job $job -ErrorAction Stop
+  if ($result -ne 42) {
+    throw "Start-Job probe returned '$result' instead of 42"
+  }
+} finally {
+  Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+}
+'@
+  $StartJobProbeOutput = & $PwshPath -NoLogo -NoProfile -NonInteractive -Command $StartJobProbe
+  if ($LASTEXITCODE -ne 0) {
+    throw "$PwshPath failed Start-Job probe with exit code $LASTEXITCODE"
+  }
+}
+
 function Invoke-PwshPSGalleryModuleProbe {
   param(
     [Parameter(Mandatory)]
@@ -987,6 +1016,7 @@ foreach (PSObject result in ps.Invoke())
     if ($RuntimeNativeRid -eq $RuntimeIdentifier) {
       [void] (Invoke-PwshVersionCheck -PwshPath $RuntimeNativePwshPath -ExpectedVersion $PowerShellVersion)
       Invoke-PwshModuleProbe -PwshPath $RuntimeNativePwshPath -ModuleRoot (Join-Path $OutputDirectory 'Modules')
+      Invoke-PwshStartJobProbe -PwshPath $RuntimeNativePwshPath
     }
   }
   Invoke-RuntimeNativeOverwriteProbe -ProjectPath $ProjectPath -Directory $OutputDirectory -RestoredSdkPath $RestoredSdkPath -RuntimeIdentifiers $RuntimeNativeValidationRids -CurrentRuntimeIdentifier $RuntimeIdentifier -TargetName 'PowerShellSDKCopyRuntimeNativeAppHostsToOutput' -Description 'Sample app output overwrite probe'
@@ -1046,6 +1076,7 @@ foreach (PSObject result in ps.Invoke())
     if ($RuntimeNativeRid -eq $RuntimeIdentifier) {
       $PwshVersion = Invoke-PwshVersionCheck -PwshPath $RuntimeNativePwshPath -ExpectedVersion $PowerShellVersion
       Invoke-PwshModuleProbe -PwshPath $RuntimeNativePwshPath -ModuleRoot (Join-Path $PublishDirectory 'Modules')
+      Invoke-PwshStartJobProbe -PwshPath $RuntimeNativePwshPath
     }
   }
 
@@ -1063,6 +1094,7 @@ foreach (PSObject result in ps.Invoke())
     $RuntimeNativePwshPath = Assert-RuntimeNativeAppHostOutput -Directory $FrameworkDependentPublishDirectory -RuntimeIdentifier $RuntimeNativeRid -ExecutableName $RuntimeNativeExecutableName -SelfContained $false -Description "Sample framework-dependent publish output [$RuntimeNativeRid]"
     if ($RuntimeNativeRid -eq $RuntimeIdentifier) {
       [void] (Invoke-PwshVersionCheck -PwshPath $RuntimeNativePwshPath -ExpectedVersion $PowerShellVersion)
+      Invoke-PwshStartJobProbe -PwshPath $RuntimeNativePwshPath
     }
   }
 
