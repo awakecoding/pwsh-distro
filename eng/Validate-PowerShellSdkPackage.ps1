@@ -92,7 +92,8 @@ function Add-RuntimeNativePublishDuplicateProbeTarget {
   $Target.SetAttribute('BeforeTargets', '_PowerShellSDKRemoveAutomaticRuntimeNativePublishItems')
   $ItemGroup = $Project.CreateElement('ItemGroup')
   foreach ($RuntimeIdentifier in $RuntimeIdentifiers) {
-    $PackageRelativePath = "runtimes/$RuntimeIdentifier/native/Microsoft.PowerShell.ConsoleHost.dll"
+    $ExecutableName = if ($RuntimeIdentifier -like 'win-*') { 'pwsh.exe' } else { 'pwsh' }
+    $PackageRelativePath = "runtimes/$RuntimeIdentifier/native/$ExecutableName"
     $PackagePath = "`$(NuGetPackageRoot)$PackageDirectoryName/$PackageVersion/$PackageRelativePath"
     $ResolvedFileToPublish = $Project.CreateElement('ResolvedFileToPublish')
     $ResolvedFileToPublish.SetAttribute('Include', $PackagePath)
@@ -164,17 +165,46 @@ function Assert-RuntimeNativeAppHostOutput {
   )
 
   $NativeDirectory = Join-Path $Directory "runtimes/$RuntimeIdentifier/native"
-  foreach ($FileName in @($ExecutableName, 'pwsh.dll', 'pwsh.runtimeconfig.json')) {
-    $OutputPath = Join-Path $NativeDirectory $FileName
-    if (-not (Test-Path $OutputPath -PathType Leaf)) {
-      throw "$Description is missing expected runtime-native apphost file: $OutputPath"
+  $ExecutablePath = Join-Path $NativeDirectory $ExecutableName
+  if (-not (Test-Path $ExecutablePath -PathType Leaf)) {
+    throw "$Description is missing expected runtime-native apphost file: $ExecutablePath"
+  }
+
+  $UnexpectedPayloadFiles = @(
+    'pwsh.dll',
+    'pwsh.runtimeconfig.json',
+    'System.Management.Automation.dll',
+    'Microsoft.PowerShell.ConsoleHost.dll',
+    'Microsoft.Management.Infrastructure.dll',
+    'Newtonsoft.Json.dll',
+    'Modules/Microsoft.PowerShell.Management/Microsoft.PowerShell.Management.psd1'
+  )
+  foreach ($RelativePayloadPath in $UnexpectedPayloadFiles) {
+    $PayloadPath = Join-Path $NativeDirectory ($RelativePayloadPath -replace '/', [System.IO.Path]::DirectorySeparatorChar)
+    if (Test-Path $PayloadPath) {
+      throw "$Description unexpectedly duplicated shared PowerShell payload under runtime-native apphost directory: $PayloadPath"
     }
   }
 
-  if ($RuntimeIdentifier -like 'win-*') {
-    $MmiPath = Join-Path $NativeDirectory 'Microsoft.Management.Infrastructure.dll'
-    if (-not (Test-Path $MmiPath -PathType Leaf)) {
-      throw "$Description is missing expected runtime-native dependency file: $MmiPath"
+  return $ExecutablePath
+}
+
+function Assert-SharedPowerShellOutput {
+  param(
+    [Parameter(Mandatory)]
+    [string] $Directory,
+
+    [Parameter(Mandatory)]
+    [bool] $SelfContained,
+
+    [Parameter(Mandatory)]
+    [string] $Description
+  )
+
+  foreach ($FileName in @('pwsh.dll', 'pwsh.runtimeconfig.json', 'Microsoft.PowerShell.ConsoleHost.dll', 'System.Management.Automation.dll')) {
+    $OutputPath = Join-Path $Directory $FileName
+    if (-not (Test-Path $OutputPath -PathType Leaf)) {
+      throw "$Description is missing expected shared PowerShell payload file: $OutputPath"
     }
   }
 
@@ -182,15 +212,13 @@ function Assert-RuntimeNativeAppHostOutput {
       'Modules/Microsoft.PowerShell.Management/Microsoft.PowerShell.Management.psd1',
       'Modules/Microsoft.PowerShell.Utility/Microsoft.PowerShell.Utility.psd1',
       'Modules/Microsoft.PowerShell.Security/Microsoft.PowerShell.Security.psd1')) {
-    $OutputPath = Join-Path $NativeDirectory ($RelativeModulePath -replace '/', [System.IO.Path]::DirectorySeparatorChar)
+    $OutputPath = Join-Path $Directory ($RelativeModulePath -replace '/', [System.IO.Path]::DirectorySeparatorChar)
     if (-not (Test-Path $OutputPath -PathType Leaf)) {
-      throw "$Description is missing expected runtime-native apphost module file: $OutputPath"
+      throw "$Description is missing expected shared PowerShell module file: $OutputPath"
     }
   }
 
-  Assert-RuntimeConfigMode -RuntimeConfigPath (Join-Path $NativeDirectory 'pwsh.runtimeconfig.json') -SelfContained $SelfContained -Description $Description
-
-  return Join-Path $NativeDirectory $ExecutableName
+  Assert-RuntimeConfigMode -RuntimeConfigPath (Join-Path $Directory 'pwsh.runtimeconfig.json') -SelfContained $SelfContained -Description $Description
 }
 
 function Assert-FileContentMatches {
@@ -219,7 +247,7 @@ function Assert-FileContentMatches {
   }
 }
 
-function Assert-RuntimeNativePackagePayloadPreserved {
+function Assert-SharedPackagePayloadPreserved {
   param(
     [Parameter(Mandatory)]
     [string] $RestoredSdkPath,
@@ -228,16 +256,16 @@ function Assert-RuntimeNativePackagePayloadPreserved {
     [string] $Directory,
 
     [Parameter(Mandatory)]
-    [string] $RuntimeIdentifier,
+    [string] $RuntimeAssetGroup,
 
     [Parameter(Mandatory)]
     [string] $Description
   )
 
   foreach ($FileName in @('System.Management.Automation.dll', 'Microsoft.PowerShell.ConsoleHost.dll')) {
-    $ExpectedPath = Join-Path $RestoredSdkPath "runtimes/$RuntimeIdentifier/native/$FileName"
-    $ActualPath = Join-Path $Directory "runtimes/$RuntimeIdentifier/native/$FileName"
-    Assert-FileContentMatches -ExpectedPath $ExpectedPath -ActualPath $ActualPath -Description "$Description [$RuntimeIdentifier] $FileName"
+    $ExpectedPath = Join-Path $RestoredSdkPath "runtimes/$RuntimeAssetGroup/lib/$TargetFramework/$FileName"
+    $ActualPath = Join-Path $Directory $FileName
+    Assert-FileContentMatches -ExpectedPath $ExpectedPath -ActualPath $ActualPath -Description "$Description shared $FileName"
   }
 }
 
@@ -301,9 +329,8 @@ function Invoke-RuntimeNativeOverwriteProbe {
 
     Invoke-DotNet $Arguments
 
-    foreach ($RuntimeNativeRid in $RuntimeIdentifiers) {
-      Assert-RuntimeNativePackagePayloadPreserved -RestoredSdkPath $RestoredSdkPath -Directory $Directory -RuntimeIdentifier $RuntimeNativeRid -Description $Description
-    }
+    $RuntimeAssetGroup = if ($CurrentRuntimeIdentifier -like 'win-*') { 'win' } else { 'unix' }
+    Assert-SharedPackagePayloadPreserved -RestoredSdkPath $RestoredSdkPath -Directory $Directory -RuntimeAssetGroup $RuntimeAssetGroup -Description $Description
   } finally {
     Copy-Item -LiteralPath $BackupPath -Destination $RootPayloadPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $BackupPath -Force -ErrorAction SilentlyContinue
@@ -502,14 +529,7 @@ foreach ($RuntimeNativeRid in $RuntimeNativeValidationRids) {
     "tools/apphost/$RuntimeNativeRid/$RuntimeNativeExecutableName",
     "tools/apphost/$RuntimeNativeRid/pwsh.dll",
     "tools/apphost/$RuntimeNativeRid/pwsh.runtimeconfig.json",
-    "runtimes/$RuntimeNativeRid/native/$RuntimeNativeExecutableName",
-    "runtimes/$RuntimeNativeRid/native/pwsh.dll",
-    "runtimes/$RuntimeNativeRid/native/pwsh.runtimeconfig.json",
-    "runtimes/$RuntimeNativeRid/native/Microsoft.PowerShell.ConsoleHost.dll",
-    "runtimes/$RuntimeNativeRid/native/System.Management.Automation.dll",
-    "runtimes/$RuntimeNativeRid/native/Modules/Microsoft.PowerShell.Management/Microsoft.PowerShell.Management.psd1",
-    "runtimes/$RuntimeNativeRid/native/Modules/Microsoft.PowerShell.Utility/Microsoft.PowerShell.Utility.psd1",
-    "runtimes/$RuntimeNativeRid/native/Modules/Microsoft.PowerShell.Security/Microsoft.PowerShell.Security.psd1"
+    "runtimes/$RuntimeNativeRid/native/$RuntimeNativeExecutableName"
   )
 }
 if ($RuntimeAssetGroup -eq 'win') {
@@ -634,7 +654,6 @@ foreach (PSObject result in ps.Invoke())
   [xml] $Project = Get-Content -LiteralPath $ProjectPath
   $PropertyGroup = @($Project.Project.PropertyGroup)[0]
   Add-ProjectProperty -Project $Project -PropertyGroup $PropertyGroup -Name 'RuntimeIdentifier' -Value $RuntimeIdentifier
-  Add-ProjectProperty -Project $Project -PropertyGroup $PropertyGroup -Name 'PowerShellSDKIncludeAppHost' -Value 'true'
   Add-ProjectProperty -Project $Project -PropertyGroup $PropertyGroup -Name 'PowerShellSDKIncludeRuntimeNativeAppHosts' -Value 'true'
   Add-ProjectProperty -Project $Project -PropertyGroup $PropertyGroup -Name 'PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers' -Value ($RuntimeNativeValidationRids -join ';')
   Add-RuntimeNativePublishDuplicateProbeTarget -Project $Project -PackageId $PackageId -PackageVersion $PowerShellVersion -RuntimeIdentifiers $RuntimeNativeValidationRids
@@ -669,16 +688,14 @@ foreach (PSObject result in ps.Invoke())
   Invoke-DotNet @('build', $ProjectPath, '--no-restore', '--nologo', '--verbosity', 'minimal')
 
   $OutputDirectory = Join-Path $SampleDirectory (Join-Path 'bin' (Join-Path 'Debug' (Join-Path $TargetFramework $RuntimeIdentifier)))
-  $PwshPath = Join-Path $OutputDirectory $ExecutableName
-  Assert-AppHostOutput -Directory $OutputDirectory -ExecutableName $ExecutableName -Description 'Sample app output'
-  Assert-RuntimeConfigMode -RuntimeConfigPath (Join-Path $OutputDirectory 'pwsh.runtimeconfig.json') -SelfContained $false -Description 'Sample app output'
+  Assert-SharedPowerShellOutput -Directory $OutputDirectory -SelfContained $false -Description 'Sample app output'
+  Assert-SharedPackagePayloadPreserved -RestoredSdkPath $RestoredSdkPath -Directory $OutputDirectory -RuntimeAssetGroup $RuntimeAssetGroup -Description 'Sample app output'
   foreach ($RuntimeNativeRid in $RuntimeNativeValidationRids) {
     $RuntimeNativeExecutableName = if ($RuntimeNativeRid -like 'win-*') { 'pwsh.exe' } else { 'pwsh' }
     $RuntimeNativePwshPath = Assert-RuntimeNativeAppHostOutput -Directory $OutputDirectory -RuntimeIdentifier $RuntimeNativeRid -ExecutableName $RuntimeNativeExecutableName -SelfContained $false -Description "Sample app output [$RuntimeNativeRid]"
-    Assert-RuntimeNativePackagePayloadPreserved -RestoredSdkPath $RestoredSdkPath -Directory $OutputDirectory -RuntimeIdentifier $RuntimeNativeRid -Description 'Sample app output'
     if ($RuntimeNativeRid -eq $RuntimeIdentifier) {
       [void] (Invoke-PwshVersionCheck -PwshPath $RuntimeNativePwshPath -ExpectedVersion $PowerShellVersion)
-      Invoke-PwshModuleProbe -PwshPath $RuntimeNativePwshPath -ModuleRoot (Join-Path (Split-Path $RuntimeNativePwshPath -Parent) 'Modules')
+      Invoke-PwshModuleProbe -PwshPath $RuntimeNativePwshPath -ModuleRoot (Join-Path $OutputDirectory 'Modules')
     }
   }
   Invoke-RuntimeNativeOverwriteProbe -ProjectPath $ProjectPath -Directory $OutputDirectory -RestoredSdkPath $RestoredSdkPath -RuntimeIdentifiers $RuntimeNativeValidationRids -CurrentRuntimeIdentifier $RuntimeIdentifier -TargetName 'PowerShellSDKCopyRuntimeNativeAppHostsToOutput' -Description 'Sample app output overwrite probe'
@@ -695,43 +712,34 @@ foreach (PSObject result in ps.Invoke())
   Invoke-DotNet @('publish', $ProjectPath, '--nologo', '--verbosity', 'minimal', '-c', 'Release', '-r', $RuntimeIdentifier, '--self-contained', 'true')
 
   $PublishDirectory = Join-Path $SampleDirectory (Join-Path 'bin' (Join-Path 'Release' (Join-Path $TargetFramework (Join-Path $RuntimeIdentifier 'publish'))))
-  $PublishedPwshPath = Join-Path $PublishDirectory $ExecutableName
-  Assert-AppHostOutput -Directory $PublishDirectory -ExecutableName $ExecutableName -Description 'Sample self-contained publish output'
-  Assert-RuntimeConfigMode -RuntimeConfigPath (Join-Path $PublishDirectory 'pwsh.runtimeconfig.json') -SelfContained $true -Description 'Sample self-contained publish output'
+  Assert-SharedPowerShellOutput -Directory $PublishDirectory -SelfContained $true -Description 'Sample self-contained publish output'
+  Assert-SharedPackagePayloadPreserved -RestoredSdkPath $RestoredSdkPath -Directory $PublishDirectory -RuntimeAssetGroup $RuntimeAssetGroup -Description 'Sample self-contained publish output'
   foreach ($RuntimeNativeRid in $RuntimeNativeValidationRids) {
     $RuntimeNativeExecutableName = if ($RuntimeNativeRid -like 'win-*') { 'pwsh.exe' } else { 'pwsh' }
     $RuntimeNativePwshPath = Assert-RuntimeNativeAppHostOutput -Directory $PublishDirectory -RuntimeIdentifier $RuntimeNativeRid -ExecutableName $RuntimeNativeExecutableName -SelfContained $true -Description "Sample self-contained publish output [$RuntimeNativeRid]"
-    Assert-RuntimeNativePackagePayloadPreserved -RestoredSdkPath $RestoredSdkPath -Directory $PublishDirectory -RuntimeIdentifier $RuntimeNativeRid -Description 'Sample self-contained publish output'
     if ($RuntimeNativeRid -eq $RuntimeIdentifier) {
-      [void] (Invoke-PwshVersionCheck -PwshPath $RuntimeNativePwshPath -ExpectedVersion $PowerShellVersion)
-      Invoke-PwshModuleProbe -PwshPath $RuntimeNativePwshPath -ModuleRoot (Join-Path (Split-Path $RuntimeNativePwshPath -Parent) 'Modules')
+      $PwshVersion = Invoke-PwshVersionCheck -PwshPath $RuntimeNativePwshPath -ExpectedVersion $PowerShellVersion
+      Invoke-PwshModuleProbe -PwshPath $RuntimeNativePwshPath -ModuleRoot (Join-Path $PublishDirectory 'Modules')
     }
   }
-  Invoke-RuntimeNativeOverwriteProbe -ProjectPath $ProjectPath -Directory $PublishDirectory -RestoredSdkPath $RestoredSdkPath -RuntimeIdentifiers $RuntimeNativeValidationRids -CurrentRuntimeIdentifier $RuntimeIdentifier -TargetName 'PowerShellSDKCopyRuntimeNativePublishPayload' -PublishDirectory $PublishDirectory -Description 'Sample self-contained publish overwrite probe'
-  $PwshVersion = Invoke-PwshVersionCheck -PwshPath $PublishedPwshPath -ExpectedVersion $PowerShellVersion
-  Invoke-PwshModuleProbe -PwshPath $PublishedPwshPath -ModuleRoot (Join-Path $PublishDirectory 'Modules')
 
   $FrameworkDependentPublishDirectory = Join-Path $SampleDirectory (Join-Path 'bin' (Join-Path 'Release' (Join-Path $TargetFramework (Join-Path $RuntimeIdentifier 'publish-framework-dependent'))))
   Remove-Item $FrameworkDependentPublishDirectory -Recurse -Force -ErrorAction SilentlyContinue
   Invoke-DotNet @('publish', $ProjectPath, '--nologo', '--verbosity', 'minimal', '-c', 'Release', '-r', $RuntimeIdentifier, '--self-contained', 'false', '-o', $FrameworkDependentPublishDirectory)
-  $FrameworkDependentPwshPath = Join-Path $FrameworkDependentPublishDirectory $ExecutableName
-  Assert-AppHostOutput -Directory $FrameworkDependentPublishDirectory -ExecutableName $ExecutableName -Description 'Sample framework-dependent publish output'
-  Assert-RuntimeConfigMode -RuntimeConfigPath (Join-Path $FrameworkDependentPublishDirectory 'pwsh.runtimeconfig.json') -SelfContained $false -Description 'Sample framework-dependent publish output'
+  Assert-SharedPowerShellOutput -Directory $FrameworkDependentPublishDirectory -SelfContained $false -Description 'Sample framework-dependent publish output'
+  Assert-SharedPackagePayloadPreserved -RestoredSdkPath $RestoredSdkPath -Directory $FrameworkDependentPublishDirectory -RuntimeAssetGroup $RuntimeAssetGroup -Description 'Sample framework-dependent publish output'
   foreach ($RuntimeNativeRid in $RuntimeNativeValidationRids) {
     $RuntimeNativeExecutableName = if ($RuntimeNativeRid -like 'win-*') { 'pwsh.exe' } else { 'pwsh' }
     $RuntimeNativePwshPath = Assert-RuntimeNativeAppHostOutput -Directory $FrameworkDependentPublishDirectory -RuntimeIdentifier $RuntimeNativeRid -ExecutableName $RuntimeNativeExecutableName -SelfContained $false -Description "Sample framework-dependent publish output [$RuntimeNativeRid]"
-    Assert-RuntimeNativePackagePayloadPreserved -RestoredSdkPath $RestoredSdkPath -Directory $FrameworkDependentPublishDirectory -RuntimeIdentifier $RuntimeNativeRid -Description 'Sample framework-dependent publish output'
     if ($RuntimeNativeRid -eq $RuntimeIdentifier) {
       [void] (Invoke-PwshVersionCheck -PwshPath $RuntimeNativePwshPath -ExpectedVersion $PowerShellVersion)
     }
   }
-  Invoke-RuntimeNativeOverwriteProbe -ProjectPath $ProjectPath -Directory $FrameworkDependentPublishDirectory -RestoredSdkPath $RestoredSdkPath -RuntimeIdentifiers $RuntimeNativeValidationRids -CurrentRuntimeIdentifier $RuntimeIdentifier -TargetName 'PowerShellSDKCopyRuntimeNativePublishPayload' -PublishDirectory $FrameworkDependentPublishDirectory -Description 'Sample framework-dependent publish overwrite probe'
-  [void] (Invoke-PwshVersionCheck -PwshPath $FrameworkDependentPwshPath -ExpectedVersion $PowerShellVersion)
 
   Write-Host "Validated $PackageId $PowerShellVersion from $($Package.FullName)"
   Write-Host "Sample app imported vendored PowerShell SDK $($AppVersion.Trim())"
-  Write-Host "Sample self-contained publish apphost reported PowerShell $PwshVersion`: $PublishedPwshPath"
-  Write-Host "Sample framework-dependent publish apphost reported PowerShell $PowerShellVersion`: $FrameworkDependentPwshPath"
+  Write-Host "Sample self-contained publish runtime-native apphost reported PowerShell $PwshVersion"
+  Write-Host "Sample framework-dependent publish runtime-native apphost reported PowerShell $PowerShellVersion"
 } finally {
   Set-Location $PreviousLocation
   $Env:NUGET_PACKAGES = $PreviousNuGetPackages

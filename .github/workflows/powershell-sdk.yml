@@ -316,6 +316,78 @@ jobs:
             return ,$ResolvedAssets
           }
 
+          function Get-DotNetSdkBasePath {
+            $DotNetInfo = & dotnet --info
+            if ($LASTEXITCODE -ne 0) {
+              throw "dotnet --info failed with exit code $LASTEXITCODE"
+            }
+
+            $BasePathLine = $DotNetInfo | Where-Object { $_ -match '^\s*Base Path:\s*(.+)$' } | Select-Object -First 1
+            if (-not $BasePathLine -or $BasePathLine -notmatch '^\s*Base Path:\s*(.+)$') {
+              throw 'Unable to determine .NET SDK base path from dotnet --info.'
+            }
+
+            return $Matches[1].Trim()
+          }
+
+          function Get-DotNetAppHostTemplate {
+            param(
+              [Parameter(Mandatory)]
+              [string] $Rid
+            )
+
+            $SdkBasePath = Get-DotNetSdkBasePath
+            $DotNetRoot = Split-Path (Split-Path $SdkBasePath -Parent) -Parent
+            $HostPackRoot = Join-Path $DotNetRoot "packs/Microsoft.NETCore.App.Host.$Rid"
+            if (-not (Test-Path $HostPackRoot -PathType Container)) {
+              throw "The .NET SDK host pack for '$Rid' was not found at $HostPackRoot"
+            }
+
+            $TemplateName = if ($Rid -like 'win-*') { 'apphost.exe' } else { 'apphost' }
+            $Template = Get-ChildItem -LiteralPath $HostPackRoot -Recurse -Filter $TemplateName |
+              Sort-Object FullName |
+              Select-Object -Last 1
+            if (-not $Template) {
+              throw "The .NET SDK host pack for '$Rid' does not contain $TemplateName"
+            }
+
+            return $Template.FullName
+          }
+
+          function New-SharedPayloadAppHost {
+            param(
+              [Parameter(Mandatory)]
+              [string] $Rid,
+
+              [Parameter(Mandatory)]
+              [string] $DestinationPath,
+
+              [Parameter(Mandatory)]
+              [string] $ResourceAssemblyPath
+            )
+
+            $SdkBasePath = Get-DotNetSdkBasePath
+            $HostModelPath = Join-Path $SdkBasePath 'Microsoft.NET.HostModel.dll'
+            if (-not (Test-Path $HostModelPath -PathType Leaf)) {
+              throw "Microsoft.NET.HostModel.dll was not found in the .NET SDK: $HostModelPath"
+            }
+
+            if (-not ([System.Management.Automation.PSTypeName]'Microsoft.NET.HostModel.AppHost.HostWriter').Type) {
+              Add-Type -Path $HostModelPath
+            }
+            $TemplatePath = Get-DotNetAppHostTemplate -Rid $Rid
+            New-Item (Split-Path $DestinationPath -Parent) -ItemType Directory -Force | Out-Null
+            [Microsoft.NET.HostModel.AppHost.HostWriter]::CreateAppHost(
+              $TemplatePath,
+              $DestinationPath,
+              '../../../pwsh.dll',
+              $false,
+              $ResourceAssemblyPath,
+              $false,
+              $false,
+              $null)
+          }
+
           $Rid = "${{matrix.rid}}"
           $OutputPath = Join-Path $PWD "PowerShell-AppHost-$Rid"
           $PSBuildParams = @{
@@ -409,6 +481,10 @@ jobs:
             Copy-Item $SourcePath $StagePath -Force
           }
 
+          $RuntimeNativeStagePath = Join-Path $StagePath "runtime-native"
+          $RuntimeNativeAppHostPath = Join-Path $RuntimeNativeStagePath $AppHostAsset.AppHostFileName
+          New-SharedPayloadAppHost -Rid $Rid -DestinationPath $RuntimeNativeAppHostPath -ResourceAssemblyPath (Join-Path $OutputPath 'pwsh.dll')
+
       - name: Validate staged PowerShell apphost
         shell: pwsh
         run: |
@@ -420,12 +496,16 @@ jobs:
               throw "Missing staged PowerShell SDK apphost file for ${{matrix.rid}}: $FilePath"
             }
           }
+          $RuntimeNativeFilePath = Join-Path $StagePath "runtime-native/${{matrix.executable}}"
+          if (-not (Test-Path $RuntimeNativeFilePath -PathType Leaf)) {
+            throw "Missing staged shared-payload runtime-native apphost file for ${{matrix.rid}}: $RuntimeNativeFilePath"
+          }
 
       - name: Upload PowerShell apphost
         uses: actions/upload-artifact@v7.0.1
         with:
           name: PowerShell-SDK-AppHost-${{matrix.rid}}
-          path: pwsh-src/apphost-package/${{matrix.rid}}/*
+          path: pwsh-src/apphost-package/${{matrix.rid}}/**
 
       - name: Upload package runtime libraries
         if: ${{ matrix.rid == 'win-x64' || matrix.rid == 'linux-x64' }}
@@ -745,19 +825,11 @@ jobs:
 
             $RuntimeNativeDestinationPath = Join-Path $SdkStagePath "runtimes/$Rid/native"
             New-Item $RuntimeNativeDestinationPath -ItemType Directory -Force | Out-Null
-            foreach ($FileName in $AppHostFilesByRid[$Rid]) {
-              Copy-Item (Join-Path $ArtifactPath $FileName) $RuntimeNativeDestinationPath -Force
+            $RuntimeNativeAppHostPath = Join-Path $ArtifactPath "runtime-native/$($AppHostFilesByRid[$Rid][0])"
+            if (-not (Test-Path $RuntimeNativeAppHostPath -PathType Leaf)) {
+              throw "Missing shared-payload runtime-native apphost for $Rid`: $RuntimeNativeAppHostPath"
             }
-
-            $RuntimeGroup = if ($Rid -like 'win-*') { 'win' } else { 'unix' }
-            Get-ChildItem -LiteralPath $PackageRuntimeRoots[$RuntimeGroup] -File |
-              Copy-Item -Destination $RuntimeNativeDestinationPath -Force
-
-            $ModuleSourceRoot = Join-Path $AnyAnyRuntimesDir "$RuntimeGroup/lib/$TargetFramework/Modules"
-            if (-not (Test-Path $ModuleSourceRoot -PathType Container)) {
-              throw "Missing module source root for native apphost layout: $ModuleSourceRoot"
-            }
-            Copy-Item $ModuleSourceRoot $RuntimeNativeDestinationPath -Recurse -Force
+            Copy-Item $RuntimeNativeAppHostPath $RuntimeNativeDestinationPath -Force
           }
 
           $BuildTransitivePath = Join-Path $SdkStagePath "buildTransitive"
