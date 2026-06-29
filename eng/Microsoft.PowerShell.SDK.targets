@@ -135,8 +135,13 @@
     <PowerShellSDKIncludeRuntimeNativeAppHosts Condition="'$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == ''">false</PowerShellSDKIncludeRuntimeNativeAppHosts>
     <PowerShellSDKRuntimeNativeAppHostCopyToOutput Condition="'$(PowerShellSDKRuntimeNativeAppHostCopyToOutput)' == ''">true</PowerShellSDKRuntimeNativeAppHostCopyToOutput>
     <PowerShellSDKRuntimeNativeAppHostCopyToPublish Condition="'$(PowerShellSDKRuntimeNativeAppHostCopyToPublish)' == ''">true</PowerShellSDKRuntimeNativeAppHostCopyToPublish>
+    <PowerShellSDKIncludePSGalleryModules Condition="'$(PowerShellSDKIncludePSGalleryModules)' == ''">false</PowerShellSDKIncludePSGalleryModules>
+    <PowerShellSDKPSGalleryModulesCopyToOutput Condition="'$(PowerShellSDKPSGalleryModulesCopyToOutput)' == ''">true</PowerShellSDKPSGalleryModulesCopyToOutput>
+    <PowerShellSDKPSGalleryModulesCopyToPublish Condition="'$(PowerShellSDKPSGalleryModulesCopyToPublish)' == ''">true</PowerShellSDKPSGalleryModulesCopyToPublish>
     <_PowerShellSDKRuntimeNativeCopyToOutputEnabled Condition="('$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'true' or '$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'True') and ('$(PowerShellSDKRuntimeNativeAppHostCopyToOutput)' == 'true' or '$(PowerShellSDKRuntimeNativeAppHostCopyToOutput)' == 'True')">true</_PowerShellSDKRuntimeNativeCopyToOutputEnabled>
     <_PowerShellSDKRuntimeNativeCopyToPublishEnabled Condition="('$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'true' or '$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'True') and ('$(PowerShellSDKRuntimeNativeAppHostCopyToPublish)' == 'true' or '$(PowerShellSDKRuntimeNativeAppHostCopyToPublish)' == 'True')">true</_PowerShellSDKRuntimeNativeCopyToPublishEnabled>
+    <_PowerShellSDKPSGalleryModulesCopyToOutputEnabled Condition="('$(PowerShellSDKIncludePSGalleryModules)' == 'true' or '$(PowerShellSDKIncludePSGalleryModules)' == 'True') and ('$(PowerShellSDKPSGalleryModulesCopyToOutput)' == 'true' or '$(PowerShellSDKPSGalleryModulesCopyToOutput)' == 'True')">true</_PowerShellSDKPSGalleryModulesCopyToOutputEnabled>
+    <_PowerShellSDKPSGalleryModulesCopyToPublishEnabled Condition="('$(PowerShellSDKIncludePSGalleryModules)' == 'true' or '$(PowerShellSDKIncludePSGalleryModules)' == 'True') and ('$(PowerShellSDKPSGalleryModulesCopyToPublish)' == 'true' or '$(PowerShellSDKPSGalleryModulesCopyToPublish)' == 'True')">true</_PowerShellSDKPSGalleryModulesCopyToPublishEnabled>
   </PropertyGroup>
 
   <Target Name="_PowerShellSDKRemoveAutomaticRuntimeNativeCopyItems"
@@ -285,6 +290,37 @@
            Text="PowerShellSDKIncludeRuntimeNativeAppHosts is true, but no runtime-native apphost files were selected. Set PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers to a RID included in this package." />
   </Target>
 
+  <Target Name="_PowerShellSDKResolvePSGalleryModules"
+          Condition="'$(PowerShellSDKIncludePSGalleryModules)' == 'true' or '$(PowerShellSDKIncludePSGalleryModules)' == 'True'">
+    <PropertyGroup>
+      <_PowerShellSDKPSGalleryModuleSourceRoot>$(MSBuildThisFileDirectory)psgallery-modules\</_PowerShellSDKPSGalleryModuleSourceRoot>
+      <_PowerShellSDKPSGalleryModuleNamesForItems>$([System.Text.RegularExpressions.Regex]::Replace('$(PowerShellSDKPSGalleryModuleNames)', '%3[Bb]', ';'))</_PowerShellSDKPSGalleryModuleNamesForItems>
+    </PropertyGroup>
+
+    <Error Condition="!Exists('$(_PowerShellSDKPSGalleryModuleSourceRoot)')"
+           Text="PowerShellSDKIncludePSGalleryModules is true, but this PowerShell SDK package does not include PSGallery module files." />
+
+    <ItemGroup>
+      <_PowerShellSDKRequestedPSGalleryModule Include="$(_PowerShellSDKPSGalleryModuleNamesForItems)"
+                                             Condition="'$(PowerShellSDKPSGalleryModuleNames)' != ''" />
+      <_PowerShellSDKMissingPSGalleryModule Include="@(_PowerShellSDKRequestedPSGalleryModule)"
+                                           Condition="'$(PowerShellSDKPSGalleryModuleNames)' != '' and !Exists('$(_PowerShellSDKPSGalleryModuleSourceRoot)%(_PowerShellSDKRequestedPSGalleryModule.Identity)')" />
+      <_PowerShellSDKAllPSGalleryModuleFile Include="$(_PowerShellSDKPSGalleryModuleSourceRoot)**\*.*"
+                                           Condition="'$(PowerShellSDKPSGalleryModuleNames)' == ''">
+      </_PowerShellSDKAllPSGalleryModuleFile>
+      <_PowerShellSDKSelectedPSGalleryModuleFile Include="$(_PowerShellSDKPSGalleryModuleSourceRoot)%(_PowerShellSDKRequestedPSGalleryModule.Identity)\**\*.*"
+                                                Condition="'$(PowerShellSDKPSGalleryModuleNames)' != ''">
+        <PowerShellSDKPSGalleryModuleName>%(_PowerShellSDKRequestedPSGalleryModule.Identity)</PowerShellSDKPSGalleryModuleName>
+      </_PowerShellSDKSelectedPSGalleryModuleFile>
+      <_PowerShellSDKPSGalleryModuleFile Include="@(_PowerShellSDKAllPSGalleryModuleFile);@(_PowerShellSDKSelectedPSGalleryModuleFile)" />
+    </ItemGroup>
+
+    <Error Condition="'@(_PowerShellSDKMissingPSGalleryModule)' != ''"
+           Text="PowerShellSDKIncludePSGalleryModules requested PSGallery module(s) that are not included in this package: @(_PowerShellSDKMissingPSGalleryModule, ', ')." />
+    <Error Condition="'@(_PowerShellSDKPSGalleryModuleFile)' == ''"
+           Text="PowerShellSDKIncludePSGalleryModules is true, but no PSGallery module files were selected." />
+  </Target>
+
   <Target Name="PowerShellSDKCopyAppHostToOutput"
           DependsOnTargets="_PowerShellSDKResolveAppHost"
           AfterTargets="CopyFilesToOutputDirectory"
@@ -362,6 +398,20 @@
           Condition="'$(OS)' != 'Windows_NT' and Exists('$(OutDir)runtimes/osx-arm64/native/pwsh')" />
   </Target>
 
+  <Target Name="PowerShellSDKCopyPSGalleryModulesToOutput"
+          DependsOnTargets="_PowerShellSDKResolvePSGalleryModules"
+          AfterTargets="CopyFilesToOutputDirectory"
+          Condition="'$(_PowerShellSDKPSGalleryModulesCopyToOutputEnabled)' == 'true'">
+    <Copy SourceFiles="@(_PowerShellSDKAllPSGalleryModuleFile)"
+          DestinationFiles="@(_PowerShellSDKAllPSGalleryModuleFile->'$(OutDir)Modules/%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true"
+          Condition="'@(_PowerShellSDKAllPSGalleryModuleFile)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKSelectedPSGalleryModuleFile)"
+          DestinationFiles="@(_PowerShellSDKSelectedPSGalleryModuleFile->'$(OutDir)Modules/%(PowerShellSDKPSGalleryModuleName)/%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true"
+          Condition="'@(_PowerShellSDKSelectedPSGalleryModuleFile)' != ''" />
+  </Target>
+
   <Target Name="PowerShellSDKAddAppHostToPublish"
           DependsOnTargets="_PowerShellSDKResolveAppHost"
           BeforeTargets="ComputeFilesToPublish"
@@ -427,6 +477,24 @@
         <RelativePath>runtimes\osx-arm64\native\%(_PowerShellSDKRuntimeNativeOsxArm64File.RecursiveDir)%(_PowerShellSDKRuntimeNativeOsxArm64File.Filename)%(_PowerShellSDKRuntimeNativeOsxArm64File.Extension)</RelativePath>
         <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
         <PowerShellSDKRuntimeNativeAppHost>true</PowerShellSDKRuntimeNativeAppHost>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+
+  <Target Name="PowerShellSDKAddPSGalleryModulesToPublish"
+          DependsOnTargets="_PowerShellSDKResolvePSGalleryModules"
+          BeforeTargets="ComputeFilesToPublish"
+          Condition="'$(_PowerShellSDKPSGalleryModulesCopyToPublishEnabled)' == 'true'">
+    <ItemGroup>
+      <ResolvedFileToPublish Include="@(_PowerShellSDKAllPSGalleryModuleFile)">
+        <RelativePath>Modules\%(_PowerShellSDKAllPSGalleryModuleFile.RecursiveDir)%(_PowerShellSDKAllPSGalleryModuleFile.Filename)%(_PowerShellSDKAllPSGalleryModuleFile.Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        <PowerShellSDKPSGalleryModule>true</PowerShellSDKPSGalleryModule>
+      </ResolvedFileToPublish>
+      <ResolvedFileToPublish Include="@(_PowerShellSDKSelectedPSGalleryModuleFile)">
+        <RelativePath>Modules\%(_PowerShellSDKSelectedPSGalleryModuleFile.PowerShellSDKPSGalleryModuleName)\%(_PowerShellSDKSelectedPSGalleryModuleFile.RecursiveDir)%(_PowerShellSDKSelectedPSGalleryModuleFile.Filename)%(_PowerShellSDKSelectedPSGalleryModuleFile.Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        <PowerShellSDKPSGalleryModule>true</PowerShellSDKPSGalleryModule>
       </ResolvedFileToPublish>
     </ItemGroup>
   </Target>

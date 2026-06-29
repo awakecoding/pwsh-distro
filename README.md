@@ -80,7 +80,7 @@ The SDK package also includes apphost files for `win-x64`, `linux-x64`, `linux-a
 </PropertyGroup>
 ```
 
-The package selects `$(RuntimeIdentifier)` first, then falls back to the SDK host runtime identifier. Set `PowerShellSDKAppHostRuntimeIdentifier` to override that selection explicitly. Unsupported runtime identifiers fail the build with a clear error instead of silently omitting apphost files. The apphost output is intended for running scripts with the core built-in modules from `$PSHOME/Modules`; it is not a full PowerShell distribution archive with localized resources, help content, or optional gallery modules.
+The package selects `$(RuntimeIdentifier)` first, then falls back to the SDK host runtime identifier. Set `PowerShellSDKAppHostRuntimeIdentifier` to override that selection explicitly. Unsupported runtime identifiers fail the build with a clear error instead of silently omitting apphost files. The apphost output is intended for running scripts with the core built-in modules from `$PSHOME/Modules`; it is not a full PowerShell distribution archive with localized resources, help content, or optional PSGallery modules.
 
 For applications that need architecture-specific apphost launchers in a native asset layout, opt in to runtime-native apphost output:
 
@@ -92,6 +92,16 @@ For applications that need architecture-specific apphost launchers in a native a
 ```
 
 This copies a minimal native launcher to `runtimes/<rid>/native/pwsh.exe` (or `pwsh` on Unix) for each selected RID. The launcher is patched to load `../../../pwsh.dll`, so `pwsh.dll`, `pwsh.runtimeconfig.json`, PowerShell runtime assemblies, built-in modules, and required RID-specific runtime library dependencies are copied once to the app output root and shared with the consuming executable. Leave `PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers` empty to copy every runtime-native launcher included in the package, or set it to a semicolon-delimited RID list. Set `PowerShellSDKRuntimeNativeSharedPayloadRuntimeIdentifier` to override the app-root payload RID; otherwise it follows `$(RuntimeIdentifier)`, `$(NETCoreSdkRuntimeIdentifier)`, or the root apphost override. Shared payload lookup normalizes platform-specific TFMs such as `net10.0-windows10.0.19041` to the package TFM `net10.0`; set `PowerShellSDKRuntimeNativeSharedPayloadTargetFramework` only if an explicit package payload TFM override is needed. Set `PowerShellSDKRuntimeNativeAppHostCopyToOutput` or `PowerShellSDKRuntimeNativeAppHostCopyToPublish` to `false` to disable one copy phase.
+
+The SDK package also stages the optional PSGallery modules that upstream PowerShell bundles into full distribution archives. They are separate from the core built-in module payload and are inert by default. To copy all staged PSGallery modules to the app or publish root `Modules` directory, opt in explicitly:
+
+```xml
+<PropertyGroup>
+  <PowerShellSDKIncludePSGalleryModules>true</PowerShellSDKIncludePSGalleryModules>
+</PropertyGroup>
+```
+
+Set `PowerShellSDKPSGalleryModuleNames` to a semicolon-delimited subset such as `Microsoft.PowerShell.Archive;Microsoft.PowerShell.ThreadJob` when a consumer does not need every staged PSGallery module. Set `PowerShellSDKPSGalleryModulesCopyToOutput` or `PowerShellSDKPSGalleryModulesCopyToPublish` to `false` to disable one copy phase. PSGallery modules increase package and output size and include additional package-management or interactive functionality, so consumers should enable them deliberately.
 
 During NuGet packing, upstream `Microsoft.PowerShell.SDK` content file/reference metadata can emit NU5100/NU5131 package analysis warnings. The SDK workflow treats package validation as the source of truth: the generated sample must restore only the vendored PowerShell package ID, build, publish framework-dependent and self-contained outputs, execute `pwsh`, and load copied built-in modules.
 

@@ -335,6 +335,46 @@ function Assert-NoSharedPowerShellRuntimeLibDuplicate {
   }
 }
 
+function Assert-PSGalleryModulesAbsent {
+  param(
+    [Parameter(Mandatory)]
+    [string] $Directory,
+
+    [Parameter(Mandatory)]
+    [string[]] $ModuleNames,
+
+    [Parameter(Mandatory)]
+    [string] $Description
+  )
+
+  foreach ($ModuleName in $ModuleNames) {
+    $ModulePath = Join-Path $Directory "Modules/$ModuleName"
+    if (Test-Path $ModulePath) {
+      throw "$Description unexpectedly contains PSGallery module '$ModuleName': $ModulePath"
+    }
+  }
+}
+
+function Assert-PSGalleryModulesPresent {
+  param(
+    [Parameter(Mandatory)]
+    [string] $Directory,
+
+    [Parameter(Mandatory)]
+    [string[]] $ModuleNames,
+
+    [Parameter(Mandatory)]
+    [string] $Description
+  )
+
+  foreach ($ModuleName in $ModuleNames) {
+    $ManifestPath = Join-Path $Directory "Modules/$ModuleName/$ModuleName.psd1"
+    if (-not (Test-Path $ManifestPath -PathType Leaf)) {
+      throw "$Description is missing expected PSGallery module manifest: $ManifestPath"
+    }
+  }
+}
+
 function Assert-FileContentMatches {
   param(
     [Parameter(Mandatory)]
@@ -555,6 +595,67 @@ if ($selectObject.Source -ne 'Microsoft.PowerShell.Utility') {
   }
 }
 
+function Invoke-PwshPSGalleryModuleProbe {
+  param(
+    [Parameter(Mandatory)]
+    [string] $PwshPath,
+
+    [Parameter(Mandatory)]
+    [string] $ModuleRoot,
+
+    [Parameter(Mandatory)]
+    [string[]] $ModuleNames
+  )
+
+  $PreviousPSModulePath = $Env:PSModulePath
+  $PreviousExpectedModuleRoot = $Env:PowerShellSDKExpectedModuleRoot
+  $PreviousExpectedPSGalleryModules = $Env:PowerShellSDKExpectedPSGalleryModules
+  try {
+    $Env:PSModulePath = ''
+    $Env:PowerShellSDKExpectedModuleRoot = $ModuleRoot
+    $Env:PowerShellSDKExpectedPSGalleryModules = $ModuleNames -join ';'
+    $ModuleProbe = @'
+$ErrorActionPreference = 'Stop'
+$expectedModuleRoot = $env:PowerShellSDKExpectedModuleRoot
+$moduleNames = $env:PowerShellSDKExpectedPSGalleryModules -split ';'
+foreach ($moduleName in $moduleNames) {
+  $module = $null
+  foreach ($candidate in Get-Module -ListAvailable $moduleName) {
+    $module = $candidate
+    break
+  }
+  if ($null -eq $module) {
+    throw "PSGallery module '$moduleName' is not available"
+  }
+
+  if (-not $module.Path.StartsWith($expectedModuleRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "PSGallery module '$moduleName' was loaded from '$($module.Path)' instead of '$expectedModuleRoot'"
+  }
+
+  Import-Module $moduleName -ErrorAction Stop
+}
+
+$compressArchive = Get-Command Compress-Archive -ErrorAction Stop
+if ($compressArchive.Source -ne 'Microsoft.PowerShell.Archive') {
+  throw "Compress-Archive resolved from '$($compressArchive.Source)' instead of Microsoft.PowerShell.Archive"
+}
+
+$startThreadJob = Get-Command Start-ThreadJob -ErrorAction Stop
+if ($startThreadJob.Source -ne 'Microsoft.PowerShell.ThreadJob') {
+  throw "Start-ThreadJob resolved from '$($startThreadJob.Source)' instead of Microsoft.PowerShell.ThreadJob"
+}
+'@
+    $PwshModuleProbeOutput = & $PwshPath -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command $ModuleProbe
+    if ($LASTEXITCODE -ne 0) {
+      throw "$PwshPath failed PSGallery module probe with exit code $LASTEXITCODE"
+    }
+  } finally {
+    $Env:PSModulePath = $PreviousPSModulePath
+    $Env:PowerShellSDKExpectedModuleRoot = $PreviousExpectedModuleRoot
+    $Env:PowerShellSDKExpectedPSGalleryModules = $PreviousExpectedPSGalleryModules
+  }
+}
+
 function Read-ZipEntryText {
   param(
     [Parameter(Mandatory)]
@@ -617,6 +718,22 @@ $EmbeddedPowerShellPackageIds = @(
   'Microsoft.WSMan.Runtime'
 )
 
+$PSGalleryModulePackageIds = @(
+  'PowerShellGet',
+  'PackageManagement',
+  'Microsoft.PowerShell.PSResourceGet',
+  'Microsoft.PowerShell.Archive',
+  'PSReadLine',
+  'Microsoft.PowerShell.ThreadJob'
+)
+$PSGalleryProbeModuleNames = @(
+  'Microsoft.PowerShell.Archive',
+  'Microsoft.PowerShell.ThreadJob'
+)
+$PSGallerySubsetModuleNames = @(
+  'Microsoft.PowerShell.Archive'
+)
+
 $ExecutableName = if ($RuntimeIdentifier -like 'win-*') { 'pwsh.exe' } else { 'pwsh' }
 $RuntimeAssetGroup = if ($RuntimeIdentifier -like 'win-*') { 'win' } else { 'unix' }
 $RuntimeNativeValidationRids = if ($RuntimeAssetGroup -eq 'win') { @('win-x64', 'win-arm64') } else { @($RuntimeIdentifier) }
@@ -648,6 +765,9 @@ foreach ($RuntimeNativeRid in $RuntimeNativeValidationRids) {
     "tools/apphost/$RuntimeNativeRid/pwsh.runtimeconfig.json",
     "runtimes/$RuntimeNativeRid/native/$RuntimeNativeExecutableName"
   )
+}
+foreach ($PSGalleryModulePackageId in $PSGalleryModulePackageIds) {
+  $ExpectedPackageEntries += "buildTransitive/psgallery-modules/$PSGalleryModulePackageId/$PSGalleryModulePackageId.psd1"
 }
 if ($RuntimeAssetGroup -eq 'win') {
   $ExpectedPackageEntries += @(
@@ -817,6 +937,7 @@ foreach (PSObject result in ps.Invoke())
   Assert-SharedPowerShellOutput -Directory $OutputDirectory -SelfContained $false -Description 'Sample app output'
   Assert-NoRootRuntimeNativeAppHostOutput -Directory $OutputDirectory -ExecutableName $ExecutableName -Description 'Sample app output'
   Assert-NoSharedPowerShellRuntimeLibDuplicate -Directory $OutputDirectory -RuntimeAssetGroup $RuntimeAssetGroup -TargetFramework $TargetFramework -Description 'Sample app output'
+  Assert-PSGalleryModulesAbsent -Directory $OutputDirectory -ModuleNames $PSGalleryModulePackageIds -Description 'Sample app output'
   Assert-SharedPackagePayloadPreserved -RestoredSdkPath $RestoredSdkPath -Directory $OutputDirectory -RuntimeAssetGroup $RuntimeAssetGroup -Description 'Sample app output'
   foreach ($RuntimeNativeRid in $RuntimeNativeValidationRids) {
     $RuntimeNativeExecutableName = if ($RuntimeNativeRid -like 'win-*') { 'pwsh.exe' } else { 'pwsh' }
@@ -843,6 +964,7 @@ foreach (PSObject result in ps.Invoke())
   Assert-SharedPowerShellOutput -Directory $PublishDirectory -SelfContained $true -Description 'Sample self-contained publish output'
   Assert-NoRootRuntimeNativeAppHostOutput -Directory $PublishDirectory -ExecutableName $ExecutableName -Description 'Sample self-contained publish output'
   Assert-NoSharedPowerShellRuntimeLibDuplicate -Directory $PublishDirectory -RuntimeAssetGroup $RuntimeAssetGroup -TargetFramework $TargetFramework -Description 'Sample self-contained publish output'
+  Assert-PSGalleryModulesAbsent -Directory $PublishDirectory -ModuleNames $PSGalleryModulePackageIds -Description 'Sample self-contained publish output'
   Assert-SharedPackagePayloadPreserved -RestoredSdkPath $RestoredSdkPath -Directory $PublishDirectory -RuntimeAssetGroup $RuntimeAssetGroup -Description 'Sample self-contained publish output'
   foreach ($RuntimeNativeRid in $RuntimeNativeValidationRids) {
     $RuntimeNativeExecutableName = if ($RuntimeNativeRid -like 'win-*') { 'pwsh.exe' } else { 'pwsh' }
@@ -859,6 +981,7 @@ foreach (PSObject result in ps.Invoke())
   Assert-SharedPowerShellOutput -Directory $FrameworkDependentPublishDirectory -SelfContained $false -Description 'Sample framework-dependent publish output'
   Assert-NoRootRuntimeNativeAppHostOutput -Directory $FrameworkDependentPublishDirectory -ExecutableName $ExecutableName -Description 'Sample framework-dependent publish output'
   Assert-NoSharedPowerShellRuntimeLibDuplicate -Directory $FrameworkDependentPublishDirectory -RuntimeAssetGroup $RuntimeAssetGroup -TargetFramework $TargetFramework -Description 'Sample framework-dependent publish output'
+  Assert-PSGalleryModulesAbsent -Directory $FrameworkDependentPublishDirectory -ModuleNames $PSGalleryModulePackageIds -Description 'Sample framework-dependent publish output'
   Assert-SharedPackagePayloadPreserved -RestoredSdkPath $RestoredSdkPath -Directory $FrameworkDependentPublishDirectory -RuntimeAssetGroup $RuntimeAssetGroup -Description 'Sample framework-dependent publish output'
   foreach ($RuntimeNativeRid in $RuntimeNativeValidationRids) {
     $RuntimeNativeExecutableName = if ($RuntimeNativeRid -like 'win-*') { 'pwsh.exe' } else { 'pwsh' }
@@ -867,6 +990,59 @@ foreach (PSObject result in ps.Invoke())
       [void] (Invoke-PwshVersionCheck -PwshPath $RuntimeNativePwshPath -ExpectedVersion $PowerShellVersion)
     }
   }
+
+  $PSGallerySubsetModuleNamesPropertyValue = $PSGallerySubsetModuleNames -join ';'
+  $UnexpectedPSGallerySubsetModuleNames = @($PSGalleryModulePackageIds | Where-Object { $PSGallerySubsetModuleNames -notcontains $_ })
+  Invoke-DotNet @(
+    'msbuild',
+    $ProjectPath,
+    '-nologo',
+    '-verbosity:minimal',
+    '-t:PowerShellSDKCopyPSGalleryModulesToOutput',
+    "/p:PowerShellSDKIncludePSGalleryModules=true",
+    "/p:PowerShellSDKPSGalleryModuleNames=$PSGallerySubsetModuleNamesPropertyValue"
+  )
+  Assert-PSGalleryModulesPresent -Directory $OutputDirectory -ModuleNames $PSGallerySubsetModuleNames -Description 'Sample app output with PSGallery subset opt-in'
+  Assert-PSGalleryModulesAbsent -Directory $OutputDirectory -ModuleNames $UnexpectedPSGallerySubsetModuleNames -Description 'Sample app output with PSGallery subset opt-in'
+
+  Invoke-DotNet @(
+    'msbuild',
+    $ProjectPath,
+    '-nologo',
+    '-verbosity:minimal',
+    '-t:PowerShellSDKCopyPSGalleryModulesToOutput',
+    "/p:PowerShellSDKIncludePSGalleryModules=true"
+  )
+  Assert-PSGalleryModulesPresent -Directory $OutputDirectory -ModuleNames $PSGalleryProbeModuleNames -Description 'Sample app output with PSGallery opt-in'
+  $OutputRuntimeNativePwshPath = Join-Path $OutputDirectory "runtimes/$RuntimeIdentifier/native/$ExecutableName"
+  Invoke-PwshPSGalleryModuleProbe -PwshPath $OutputRuntimeNativePwshPath -ModuleRoot (Join-Path $OutputDirectory 'Modules') -ModuleNames $PSGalleryProbeModuleNames
+
+  $PSGalleryPublishDirectory = Join-Path $SampleDirectory (Join-Path 'bin' (Join-Path 'Release' (Join-Path $SampleTargetFramework (Join-Path $RuntimeIdentifier 'publish-psgallery'))))
+  Remove-Item $PSGalleryPublishDirectory -Recurse -Force -ErrorAction SilentlyContinue
+  Invoke-DotNet @(
+    'publish',
+    $ProjectPath,
+    '--nologo',
+    '--verbosity',
+    'minimal',
+    '-c',
+    'Release',
+    '-r',
+    $RuntimeIdentifier,
+    '--self-contained',
+    'false',
+    '-o',
+    $PSGalleryPublishDirectory,
+    "/p:PowerShellSDKIncludePSGalleryModules=true",
+    "/p:PowerShellSDKPSGalleryModuleNames=$PSGallerySubsetModuleNamesPropertyValue"
+  )
+  Assert-SharedPowerShellOutput -Directory $PSGalleryPublishDirectory -SelfContained $false -Description 'Sample PSGallery publish output'
+  Assert-NoRootRuntimeNativeAppHostOutput -Directory $PSGalleryPublishDirectory -ExecutableName $ExecutableName -Description 'Sample PSGallery publish output'
+  Assert-NoSharedPowerShellRuntimeLibDuplicate -Directory $PSGalleryPublishDirectory -RuntimeAssetGroup $RuntimeAssetGroup -TargetFramework $TargetFramework -Description 'Sample PSGallery publish output'
+  Assert-PSGalleryModulesPresent -Directory $PSGalleryPublishDirectory -ModuleNames $PSGallerySubsetModuleNames -Description 'Sample PSGallery publish output'
+  Assert-PSGalleryModulesAbsent -Directory $PSGalleryPublishDirectory -ModuleNames $UnexpectedPSGallerySubsetModuleNames -Description 'Sample PSGallery publish output'
+  $PSGalleryPublishRuntimeNativePwshPath = Assert-RuntimeNativeAppHostOutput -Directory $PSGalleryPublishDirectory -RuntimeIdentifier $RuntimeIdentifier -ExecutableName $ExecutableName -SelfContained $false -Description "Sample PSGallery publish output [$RuntimeIdentifier]"
+  [void] (Invoke-PwshVersionCheck -PwshPath $PSGalleryPublishRuntimeNativePwshPath -ExpectedVersion $PowerShellVersion)
 
   Write-Host "Validated $PackageId $PowerShellVersion from $($Package.FullName)"
   Write-Host "Sample app imported vendored PowerShell SDK $($AppVersion.Trim())"

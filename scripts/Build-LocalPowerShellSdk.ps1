@@ -349,6 +349,99 @@ function Add-OverlayFile {
   }
 }
 
+function Get-NuGetGlobalPackagesPath {
+  $Output = & dotnet nuget locals global-packages --list
+  if ($LASTEXITCODE -ne 0) {
+    throw "dotnet nuget locals global-packages --list failed with exit code $LASTEXITCODE"
+  }
+
+  $GlobalPackagesLine = $Output | Where-Object { $_ -match '^\s*global-packages:\s*(.+)$' } | Select-Object -First 1
+  if (-not $GlobalPackagesLine -or $GlobalPackagesLine -notmatch '^\s*global-packages:\s*(.+)$') {
+    throw 'Unable to determine NuGet global packages path.'
+  }
+
+  return $Matches[1].Trim()
+}
+
+function Get-NuGetCacheVersion {
+  param(
+    [Parameter(Mandatory)]
+    [string] $Version
+  )
+
+  if ($Version -match '^(\d+\.\d+\.\d+)\.0$') {
+    return $Matches[1]
+  }
+  if ($Version -match '^\d+\.\d+$') {
+    return "$Version.0"
+  }
+
+  return $Version
+}
+
+function Copy-PSGalleryModulesToPackage {
+  param(
+    [Parameter(Mandatory)]
+    [string] $ProjectPath,
+
+    [Parameter(Mandatory)]
+    [string] $DestinationRoot
+  )
+
+  if (-not (Test-Path -LiteralPath $ProjectPath -PathType Leaf)) {
+    throw "PSGallery module project was not found: $ProjectPath"
+  }
+
+  $ProjectDirectory = Split-Path -Parent $ProjectPath
+  $NuGetConfigPath = Join-Path $ProjectDirectory 'nuget.config'
+  $RestoreArguments = @('restore', $ProjectPath, '--verbosity', 'minimal')
+  if (Test-Path -LiteralPath $NuGetConfigPath -PathType Leaf) {
+    $RestoreArguments += @('--configfile', $NuGetConfigPath)
+  }
+
+  Invoke-Native dotnet $RestoreArguments
+
+  [xml] $PSGalleryProject = Get-Content -LiteralPath $ProjectPath -Raw
+  $PackageReferences = @($PSGalleryProject.Project.ItemGroup.PackageReference)
+  if (-not $PackageReferences) {
+    throw "PSGallery module project contains no PackageReference items: $ProjectPath"
+  }
+
+  $NuGetGlobalPackagesPath = Get-NuGetGlobalPackagesPath
+  Remove-Item -LiteralPath $DestinationRoot -Recurse -Force -ErrorAction SilentlyContinue
+  New-Item -Path $DestinationRoot -ItemType Directory -Force | Out-Null
+
+  foreach ($PackageReference in $PackageReferences) {
+    $ModuleName = [string] $PackageReference.Include
+    $ModuleVersion = [string] $PackageReference.Version
+    if ([string]::IsNullOrWhiteSpace($ModuleName) -or [string]::IsNullOrWhiteSpace($ModuleVersion)) {
+      throw "Invalid PSGallery module PackageReference in $ProjectPath"
+    }
+
+    $CacheVersion = Get-NuGetCacheVersion -Version $ModuleVersion
+    $SourcePath = Join-Path $NuGetGlobalPackagesPath (Join-Path $ModuleName.ToLowerInvariant() $CacheVersion)
+    if (-not (Test-Path -LiteralPath $SourcePath -PathType Container)) {
+      throw "Restored PSGallery module package was not found: $SourcePath"
+    }
+
+    $DestinationPath = Join-Path $DestinationRoot $ModuleName
+    Remove-Item -LiteralPath $DestinationPath -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -Path $DestinationPath -ItemType Directory -Force | Out-Null
+    Copy-Item -Path (Join-Path $SourcePath '*') -Destination $DestinationPath -Recurse -Force
+
+    $ExcludedNames = @('fullclr', 'System.Runtime.InteropServices.RuntimeInformation.dll')
+    $ExcludedPatterns = @('*.nupkg', '*.nupkg.metadata', '*.nupkg.sha512', '*.nuspec')
+    Get-ChildItem -LiteralPath $DestinationPath -Recurse -Force |
+      Sort-Object FullName -Descending |
+      Where-Object {
+        $ItemName = $_.Name
+        $ExcludedNames -contains $_.Name -or
+        (@($ExcludedPatterns | Where-Object { $ItemName -like $_ }).Count -gt 0)
+      } |
+      Remove-Item -Recurse -Force
+  }
+}
+
 if (-not $RuntimeIdentifier) {
   $RuntimeIdentifier = Get-DefaultRuntimeIdentifier
 }
@@ -500,6 +593,10 @@ try {
     New-Item $DestinationDir -ItemType Directory -Force | Out-Null
     Copy-Item $_ $DestinationDir -Force
   }
+
+  Copy-PSGalleryModulesToPackage `
+    -ProjectPath (Join-Path $PwshSourceRoot 'src\Modules\PSGalleryModules.csproj') `
+    -DestinationRoot (Join-Path $SdkStagePath 'buildTransitive\psgallery-modules')
 
   foreach ($AppHostRuntimeIdentifier in $AppHostRuntimeIdentifiers) {
     $AppHostAsset = $AppHostAssets[$AppHostRuntimeIdentifier]
