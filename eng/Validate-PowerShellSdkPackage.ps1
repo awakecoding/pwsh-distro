@@ -259,6 +259,24 @@ function Assert-RuntimeNativeAppHostOutput {
   return $ExecutablePath
 }
 
+function Assert-NoRootRuntimeNativeAppHostOutput {
+  param(
+    [Parameter(Mandatory)]
+    [string] $Directory,
+
+    [Parameter(Mandatory)]
+    [string] $ExecutableName,
+
+    [Parameter(Mandatory)]
+    [string] $Description
+  )
+
+  $RootExecutablePath = Join-Path $Directory $ExecutableName
+  if (Test-Path $RootExecutablePath -PathType Leaf) {
+    throw "$Description unexpectedly copied the runtime-native apphost to the app root: $RootExecutablePath"
+  }
+}
+
 function Assert-SharedPowerShellOutput {
   param(
     [Parameter(Mandatory)]
@@ -797,6 +815,7 @@ foreach (PSObject result in ps.Invoke())
 
   $OutputDirectory = Join-Path $SampleDirectory (Join-Path 'bin' (Join-Path 'Debug' (Join-Path $SampleTargetFramework $RuntimeIdentifier)))
   Assert-SharedPowerShellOutput -Directory $OutputDirectory -SelfContained $false -Description 'Sample app output'
+  Assert-NoRootRuntimeNativeAppHostOutput -Directory $OutputDirectory -ExecutableName $ExecutableName -Description 'Sample app output'
   Assert-NoSharedPowerShellRuntimeLibDuplicate -Directory $OutputDirectory -RuntimeAssetGroup $RuntimeAssetGroup -TargetFramework $TargetFramework -Description 'Sample app output'
   Assert-SharedPackagePayloadPreserved -RestoredSdkPath $RestoredSdkPath -Directory $OutputDirectory -RuntimeAssetGroup $RuntimeAssetGroup -Description 'Sample app output'
   foreach ($RuntimeNativeRid in $RuntimeNativeValidationRids) {
@@ -822,6 +841,7 @@ foreach (PSObject result in ps.Invoke())
 
   $PublishDirectory = Join-Path $SampleDirectory (Join-Path 'bin' (Join-Path 'Release' (Join-Path $SampleTargetFramework (Join-Path $RuntimeIdentifier 'publish'))))
   Assert-SharedPowerShellOutput -Directory $PublishDirectory -SelfContained $true -Description 'Sample self-contained publish output'
+  Assert-NoRootRuntimeNativeAppHostOutput -Directory $PublishDirectory -ExecutableName $ExecutableName -Description 'Sample self-contained publish output'
   Assert-NoSharedPowerShellRuntimeLibDuplicate -Directory $PublishDirectory -RuntimeAssetGroup $RuntimeAssetGroup -TargetFramework $TargetFramework -Description 'Sample self-contained publish output'
   Assert-SharedPackagePayloadPreserved -RestoredSdkPath $RestoredSdkPath -Directory $PublishDirectory -RuntimeAssetGroup $RuntimeAssetGroup -Description 'Sample self-contained publish output'
   foreach ($RuntimeNativeRid in $RuntimeNativeValidationRids) {
@@ -837,6 +857,7 @@ foreach (PSObject result in ps.Invoke())
   Remove-Item $FrameworkDependentPublishDirectory -Recurse -Force -ErrorAction SilentlyContinue
   Invoke-DotNet @('publish', $ProjectPath, '--nologo', '--verbosity', 'minimal', '-c', 'Release', '-r', $RuntimeIdentifier, '--self-contained', 'false', '-o', $FrameworkDependentPublishDirectory)
   Assert-SharedPowerShellOutput -Directory $FrameworkDependentPublishDirectory -SelfContained $false -Description 'Sample framework-dependent publish output'
+  Assert-NoRootRuntimeNativeAppHostOutput -Directory $FrameworkDependentPublishDirectory -ExecutableName $ExecutableName -Description 'Sample framework-dependent publish output'
   Assert-NoSharedPowerShellRuntimeLibDuplicate -Directory $FrameworkDependentPublishDirectory -RuntimeAssetGroup $RuntimeAssetGroup -TargetFramework $TargetFramework -Description 'Sample framework-dependent publish output'
   Assert-SharedPackagePayloadPreserved -RestoredSdkPath $RestoredSdkPath -Directory $FrameworkDependentPublishDirectory -RuntimeAssetGroup $RuntimeAssetGroup -Description 'Sample framework-dependent publish output'
   foreach ($RuntimeNativeRid in $RuntimeNativeValidationRids) {

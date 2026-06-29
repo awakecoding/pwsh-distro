@@ -145,10 +145,10 @@
     <ItemGroup>
       <NativeCopyLocalItems Remove="@(NativeCopyLocalItems)"
                             Condition="'%(NativeCopyLocalItems.NuGetPackageId)' == 'Devolutions.PowerShell.SDK' and $([System.String]::Copy('%(NativeCopyLocalItems.PathInPackage)').Contains('/native/'))" />
-      <RuntimeCopyLocalItems Condition="'$(_PowerShellSDKRuntimeNativeCopyToOutputEnabled)' == 'true' and '%(RuntimeCopyLocalItems.NuGetPackageId)' == 'Devolutions.PowerShell.SDK' and ($([System.String]::Copy('%(RuntimeCopyLocalItems.PathInPackage)').Contains('/lib/')) or $([System.String]::Copy('%(RuntimeCopyLocalItems.DestinationSubDirectory)').Contains('runtimes\')) or $([System.String]::Copy('%(RuntimeCopyLocalItems.DestinationSubDirectory)').Contains('runtimes/')))">
+      <RuntimeCopyLocalItems Condition="'$(_PowerShellSDKRuntimeNativeCopyToOutputEnabled)' == 'true' and '%(RuntimeCopyLocalItems.NuGetPackageId)' == 'Devolutions.PowerShell.SDK' and ($([System.String]::Copy('%(RuntimeCopyLocalItems.PathInPackage)').Contains('/lib/')) or $([System.String]::Copy('%(RuntimeCopyLocalItems.DestinationSubDirectory)').Contains('\lib\')) or $([System.String]::Copy('%(RuntimeCopyLocalItems.DestinationSubDirectory)').Contains('/lib/')))">
         <DestinationSubDirectory></DestinationSubDirectory>
       </RuntimeCopyLocalItems>
-      <RuntimeTargetsCopyLocalItems Condition="'$(_PowerShellSDKRuntimeNativeCopyToOutputEnabled)' == 'true' and '%(RuntimeTargetsCopyLocalItems.NuGetPackageId)' == 'Devolutions.PowerShell.SDK' and ($([System.String]::Copy('%(RuntimeTargetsCopyLocalItems.PathInPackage)').Contains('/lib/')) or $([System.String]::Copy('%(RuntimeTargetsCopyLocalItems.DestinationSubDirectory)').Contains('runtimes\')) or $([System.String]::Copy('%(RuntimeTargetsCopyLocalItems.DestinationSubDirectory)').Contains('runtimes/')))">
+      <RuntimeTargetsCopyLocalItems Condition="'$(_PowerShellSDKRuntimeNativeCopyToOutputEnabled)' == 'true' and '%(RuntimeTargetsCopyLocalItems.NuGetPackageId)' == 'Devolutions.PowerShell.SDK' and ($([System.String]::Copy('%(RuntimeTargetsCopyLocalItems.PathInPackage)').Contains('/lib/')) or $([System.String]::Copy('%(RuntimeTargetsCopyLocalItems.DestinationSubDirectory)').Contains('\lib\')) or $([System.String]::Copy('%(RuntimeTargetsCopyLocalItems.DestinationSubDirectory)').Contains('/lib/')))">
         <DestinationSubDirectory></DestinationSubDirectory>
       </RuntimeTargetsCopyLocalItems>
       <_ContentFilesToPreprocess Remove="@(_ContentFilesToPreprocess)"
