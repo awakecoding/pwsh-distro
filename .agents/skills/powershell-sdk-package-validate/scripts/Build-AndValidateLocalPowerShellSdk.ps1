@@ -55,23 +55,23 @@ function Get-YamlScalar {
 $WorkflowPath = '.github\workflows\powershell-sdk.yml'
 $WorkflowText = Get-RepositoryFileText $WorkflowPath
 
-$BuildArguments = @(
-  '-PowerShellVersion', (Get-YamlScalar -Text $WorkflowText -Name 'POWERSHELL_VERSION' -FileName $WorkflowPath),
-  '-PowerShellReleaseTag', (Get-YamlScalar -Text $WorkflowText -Name 'POWERSHELL_RELEASE_TAG' -FileName $WorkflowPath),
-  '-PackageId', (Get-YamlScalar -Text $WorkflowText -Name 'SDK_PACKAGE_ID' -FileName $WorkflowPath),
-  '-VendorName', (Get-YamlScalar -Text $WorkflowText -Name 'SDK_VENDOR_NAME' -FileName $WorkflowPath),
-  '-MultiPwshPackageId', (Get-YamlScalar -Text $WorkflowText -Name 'MULTI_PWSH_APPHOST_PACKAGE_ID' -FileName $WorkflowPath),
-  '-MultiPwshPackageVersion', (Get-YamlScalar -Text $WorkflowText -Name 'MULTI_PWSH_APPHOST_PACKAGE_VERSION' -FileName $WorkflowPath),
-  '-MultiPwshPackageSource', (Get-YamlScalar -Text $WorkflowText -Name 'MULTI_PWSH_APPHOST_PACKAGE_SOURCE' -FileName $WorkflowPath),
-  '-OutputRoot', $OutputRoot,
-  '-Validate'
-)
+$BuildArguments = @{
+  PowerShellVersion = Get-YamlScalar -Text $WorkflowText -Name 'POWERSHELL_VERSION' -FileName $WorkflowPath
+  PowerShellReleaseTag = Get-YamlScalar -Text $WorkflowText -Name 'POWERSHELL_RELEASE_TAG' -FileName $WorkflowPath
+  PackageId = Get-YamlScalar -Text $WorkflowText -Name 'SDK_PACKAGE_ID' -FileName $WorkflowPath
+  VendorName = Get-YamlScalar -Text $WorkflowText -Name 'SDK_VENDOR_NAME' -FileName $WorkflowPath
+  MultiPwshPackageId = Get-YamlScalar -Text $WorkflowText -Name 'MULTI_PWSH_APPHOST_PACKAGE_ID' -FileName $WorkflowPath
+  MultiPwshPackageVersion = Get-YamlScalar -Text $WorkflowText -Name 'MULTI_PWSH_APPHOST_PACKAGE_VERSION' -FileName $WorkflowPath
+  MultiPwshPackageSource = Get-YamlScalar -Text $WorkflowText -Name 'MULTI_PWSH_APPHOST_PACKAGE_SOURCE' -FileName $WorkflowPath
+  OutputRoot = $OutputRoot
+  Validate = $true
+}
 
 if ($RuntimeIdentifier) {
-  $BuildArguments += @('-RuntimeIdentifier', $RuntimeIdentifier)
+  $BuildArguments.RuntimeIdentifier = $RuntimeIdentifier
 }
 if ($NuGetExe) {
-  $BuildArguments += @('-NuGetExe', $NuGetExe)
+  $BuildArguments.NuGetExe = $NuGetExe
 }
 
 if (-not $SkipPinAudit) {
