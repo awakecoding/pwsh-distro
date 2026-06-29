@@ -71,6 +71,50 @@ function Add-ProjectProperty {
   [void] $PropertyGroup.AppendChild($Element)
 }
 
+function Add-RuntimeNativePublishDuplicateProbeTarget {
+  param(
+    [Parameter(Mandatory)]
+    [xml] $Project,
+
+    [Parameter(Mandatory)]
+    [string] $PackageId,
+
+    [Parameter(Mandatory)]
+    [string] $PackageVersion,
+
+    [Parameter(Mandatory)]
+    [string[]] $RuntimeIdentifiers
+  )
+
+  $PackageDirectoryName = $PackageId.ToLowerInvariant()
+  $Target = $Project.CreateElement('Target')
+  $Target.SetAttribute('Name', 'InjectPowerShellSDKRuntimeNativePublishDuplicateProbe')
+  $Target.SetAttribute('BeforeTargets', '_PowerShellSDKRemoveAutomaticRuntimeNativePublishItems')
+  $ItemGroup = $Project.CreateElement('ItemGroup')
+  foreach ($RuntimeIdentifier in $RuntimeIdentifiers) {
+    $PackageRelativePath = "runtimes/$RuntimeIdentifier/native/Microsoft.PowerShell.ConsoleHost.dll"
+    $PackagePath = "`$(NuGetPackageRoot)$PackageDirectoryName/$PackageVersion/$PackageRelativePath"
+    $ResolvedFileToPublish = $Project.CreateElement('ResolvedFileToPublish')
+    $ResolvedFileToPublish.SetAttribute('Include', $PackagePath)
+    $ResolvedFileToPublish.SetAttribute('Condition', "Exists('$PackagePath')")
+
+    foreach ($Metadata in @(
+        @{ Name = 'RelativePath'; Value = $PackageRelativePath },
+        @{ Name = 'CopyToPublishDirectory'; Value = 'PreserveNewest' },
+        @{ Name = 'NuGetPackageId'; Value = $PackageId },
+        @{ Name = 'PathInPackage'; Value = $PackageRelativePath })) {
+      $MetadataElement = $Project.CreateElement($Metadata.Name)
+      $MetadataElement.InnerText = $Metadata.Value
+      [void] $ResolvedFileToPublish.AppendChild($MetadataElement)
+    }
+
+    [void] $ItemGroup.AppendChild($ResolvedFileToPublish)
+  }
+
+  [void] $Target.AppendChild($ItemGroup)
+  [void] $Project.Project.AppendChild($Target)
+}
+
 function Assert-AppHostOutput {
   param(
     [Parameter(Mandatory)]
@@ -593,6 +637,7 @@ foreach (PSObject result in ps.Invoke())
   Add-ProjectProperty -Project $Project -PropertyGroup $PropertyGroup -Name 'PowerShellSDKIncludeAppHost' -Value 'true'
   Add-ProjectProperty -Project $Project -PropertyGroup $PropertyGroup -Name 'PowerShellSDKIncludeRuntimeNativeAppHosts' -Value 'true'
   Add-ProjectProperty -Project $Project -PropertyGroup $PropertyGroup -Name 'PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers' -Value ($RuntimeNativeValidationRids -join ';')
+  Add-RuntimeNativePublishDuplicateProbeTarget -Project $Project -PackageId $PackageId -PackageVersion $PowerShellVersion -RuntimeIdentifiers $RuntimeNativeValidationRids
   $Project.Save($ProjectPath)
 
   Invoke-DotNet @('add', $ProjectPath, 'package', $PackageId, '--version', $PowerShellVersion, '--no-restore')

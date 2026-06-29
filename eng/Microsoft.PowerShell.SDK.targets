@@ -145,6 +145,14 @@
     </ItemGroup>
   </Target>
 
+  <Target Name="_PowerShellSDKRemoveAutomaticRuntimeNativePublishItems"
+          BeforeTargets="_HandleFileConflictsForPublish">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+                             Condition="'%(ResolvedFileToPublish.PowerShellSDKRuntimeNativeAppHost)' != 'true' and ('%(ResolvedFileToPublish.NuGetPackageId)' == 'Devolutions.PowerShell.SDK' or $([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('\devolutions.powershell.sdk\')) or $([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('/devolutions.powershell.sdk/'))) and ($([System.String]::Copy('%(ResolvedFileToPublish.PathInPackage)').Contains('/native/')) or ($([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('\runtimes\')) and $([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('\native\'))) or ($([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('/runtimes/')) and $([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('/native/'))))" />
+    </ItemGroup>
+  </Target>
+
   <PropertyGroup Condition="'$(PowerShellSDKIncludeAppHost)' == 'true' or '$(PowerShellSDKIncludeAppHost)' == 'True'">
     <_PowerShellSDKAppHostRid Condition="'$(PowerShellSDKAppHostRuntimeIdentifier)' != ''">$(PowerShellSDKAppHostRuntimeIdentifier)</_PowerShellSDKAppHostRid>
     <_PowerShellSDKAppHostRid Condition="'$(_PowerShellSDKAppHostRid)' == '' and '$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</_PowerShellSDKAppHostRid>
@@ -369,26 +377,32 @@
       <ResolvedFileToPublish Include="@(_PowerShellSDKRuntimeNativeWinX64File)">
         <RelativePath>runtimes\win-x64\native\%(_PowerShellSDKRuntimeNativeWinX64File.RecursiveDir)%(_PowerShellSDKRuntimeNativeWinX64File.Filename)%(_PowerShellSDKRuntimeNativeWinX64File.Extension)</RelativePath>
         <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        <PowerShellSDKRuntimeNativeAppHost>true</PowerShellSDKRuntimeNativeAppHost>
       </ResolvedFileToPublish>
       <ResolvedFileToPublish Include="@(_PowerShellSDKRuntimeNativeWinArm64File)">
         <RelativePath>runtimes\win-arm64\native\%(_PowerShellSDKRuntimeNativeWinArm64File.RecursiveDir)%(_PowerShellSDKRuntimeNativeWinArm64File.Filename)%(_PowerShellSDKRuntimeNativeWinArm64File.Extension)</RelativePath>
         <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        <PowerShellSDKRuntimeNativeAppHost>true</PowerShellSDKRuntimeNativeAppHost>
       </ResolvedFileToPublish>
       <ResolvedFileToPublish Include="@(_PowerShellSDKRuntimeNativeLinuxX64File)">
         <RelativePath>runtimes\linux-x64\native\%(_PowerShellSDKRuntimeNativeLinuxX64File.RecursiveDir)%(_PowerShellSDKRuntimeNativeLinuxX64File.Filename)%(_PowerShellSDKRuntimeNativeLinuxX64File.Extension)</RelativePath>
         <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        <PowerShellSDKRuntimeNativeAppHost>true</PowerShellSDKRuntimeNativeAppHost>
       </ResolvedFileToPublish>
       <ResolvedFileToPublish Include="@(_PowerShellSDKRuntimeNativeLinuxArm64File)">
         <RelativePath>runtimes\linux-arm64\native\%(_PowerShellSDKRuntimeNativeLinuxArm64File.RecursiveDir)%(_PowerShellSDKRuntimeNativeLinuxArm64File.Filename)%(_PowerShellSDKRuntimeNativeLinuxArm64File.Extension)</RelativePath>
         <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        <PowerShellSDKRuntimeNativeAppHost>true</PowerShellSDKRuntimeNativeAppHost>
       </ResolvedFileToPublish>
       <ResolvedFileToPublish Include="@(_PowerShellSDKRuntimeNativeOsxX64File)">
         <RelativePath>runtimes\osx-x64\native\%(_PowerShellSDKRuntimeNativeOsxX64File.RecursiveDir)%(_PowerShellSDKRuntimeNativeOsxX64File.Filename)%(_PowerShellSDKRuntimeNativeOsxX64File.Extension)</RelativePath>
         <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        <PowerShellSDKRuntimeNativeAppHost>true</PowerShellSDKRuntimeNativeAppHost>
       </ResolvedFileToPublish>
       <ResolvedFileToPublish Include="@(_PowerShellSDKRuntimeNativeOsxArm64File)">
         <RelativePath>runtimes\osx-arm64\native\%(_PowerShellSDKRuntimeNativeOsxArm64File.RecursiveDir)%(_PowerShellSDKRuntimeNativeOsxArm64File.Filename)%(_PowerShellSDKRuntimeNativeOsxArm64File.Extension)</RelativePath>
         <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        <PowerShellSDKRuntimeNativeAppHost>true</PowerShellSDKRuntimeNativeAppHost>
       </ResolvedFileToPublish>
     </ItemGroup>
   </Target>
