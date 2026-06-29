@@ -6,6 +6,8 @@ param(
   [Parameter(Mandatory)]
   [string] $PowerShellVersion,
 
+  [string] $PackageVersion,
+
   [Parameter(Mandatory)]
   [string] $TargetFramework,
 
@@ -762,16 +764,59 @@ function Get-NuspecMetadataValue {
   return $Element.InnerText
 }
 
+function Assert-SdkPackageVersion {
+  param(
+    [Parameter(Mandatory)]
+    [string] $PowerShellVersion,
+
+    [Parameter(Mandatory)]
+    [string] $PackageVersion
+  )
+
+  $PowerShellVersionParts = $PowerShellVersion -split '\.'
+  $PackageVersionParts = $PackageVersion -split '\.'
+  if ($PowerShellVersionParts.Count -ne 3 -or $PackageVersionParts.Count -ne 4) {
+    throw "SDK package version '$PackageVersion' must use '$PowerShellVersion.<revision>'."
+  }
+
+  if (($PackageVersionParts[0..2] -join '.') -ne $PowerShellVersion) {
+    throw "SDK package version '$PackageVersion' must use PowerShell upstream version '$PowerShellVersion' as its first three elements."
+  }
+
+  if ($PackageVersionParts[3] -notmatch '^\d+$') {
+    throw "SDK package version '$PackageVersion' must use a numeric fourth-element revision."
+  }
+}
+
+function Get-NormalizedNuGetPackageVersion {
+  param(
+    [Parameter(Mandatory)]
+    [string] $PackageVersion
+  )
+
+  $Version = [version]::Parse($PackageVersion)
+  if ($Version.Revision -eq 0) {
+    return "$($Version.Major).$($Version.Minor).$($Version.Build)"
+  }
+
+  return $PackageVersion
+}
+
 if (-not $RuntimeIdentifier) {
   $RuntimeIdentifier = Get-DefaultRuntimeIdentifier
 }
+if ([string]::IsNullOrWhiteSpace($PackageVersion)) {
+  $PackageVersion = "$PowerShellVersion.0"
+}
+Assert-SdkPackageVersion -PowerShellVersion $PowerShellVersion -PackageVersion $PackageVersion
+$NormalizedPackageVersion = Get-NormalizedNuGetPackageVersion -PackageVersion $PackageVersion
 
 $PackageDirectoryPath = (Resolve-Path -LiteralPath $PackageDirectory).Path
-$Package = Get-ChildItem -LiteralPath $PackageDirectoryPath -Filter "$PackageId.$PowerShellVersion*.nupkg" |
+$Package = Get-ChildItem -LiteralPath $PackageDirectoryPath -Filter "$PackageId.$NormalizedPackageVersion*.nupkg" |
   Sort-Object LastWriteTime -Descending |
   Select-Object -First 1
 if (-not $Package) {
-  throw "Unable to find $PackageId.$PowerShellVersion nupkg in $PackageDirectoryPath"
+  throw "Unable to find $PackageId.$PackageVersion nupkg in $PackageDirectoryPath"
 }
 
 $EmbeddedPowerShellPackageIds = @(
@@ -880,6 +925,11 @@ try {
       throw "SDK package nuspec id is '$NuspecPackageId', expected '$PackageId'"
     }
 
+    $NuspecPackageVersion = Get-NuspecMetadataValue -Nuspec $Nuspec -NamespaceManager $NamespaceManager -Name 'version'
+    if ($NuspecPackageVersion -ne $NormalizedPackageVersion) {
+      throw "SDK package nuspec version is '$NuspecPackageVersion', expected normalized version '$NormalizedPackageVersion'"
+    }
+
     foreach ($ElementName in @('authors', 'owners', 'copyright')) {
       $Value = Get-NuspecMetadataValue -Nuspec $Nuspec -NamespaceManager $NamespaceManager -Name $ElementName
       if ($Value -notlike "*$PackageVendorName*") {
@@ -969,13 +1019,13 @@ foreach (PSObject result in ps.Invoke())
   Add-ProjectProperty -Project $Project -PropertyGroup $PropertyGroup -Name 'RuntimeIdentifier' -Value $RuntimeIdentifier
   Add-ProjectProperty -Project $Project -PropertyGroup $PropertyGroup -Name 'PowerShellSDKIncludeRuntimeNativeAppHosts' -Value 'true'
   Add-ProjectProperty -Project $Project -PropertyGroup $PropertyGroup -Name 'PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers' -Value ($RuntimeNativeValidationRids -join ';')
-  Add-RuntimeNativePublishDuplicateProbeTarget -Project $Project -PackageId $PackageId -PackageVersion $PowerShellVersion -RuntimeIdentifiers $RuntimeNativeValidationRids
+  Add-RuntimeNativePublishDuplicateProbeTarget -Project $Project -PackageId $PackageId -PackageVersion $NormalizedPackageVersion -RuntimeIdentifiers $RuntimeNativeValidationRids
   if ($RuntimeAssetGroup -eq 'win') {
-    Add-PowerShellStandardPublishDuplicateProbeTarget -Project $Project -PackageId $PowerShellStandardPackageId -PackageVersion $PowerShellStandardPackageVersion -SdkPackageId $PackageId -SdkPackageVersion $PowerShellVersion -RuntimeAssetGroup $RuntimeAssetGroup -TargetFramework $TargetFramework
+    Add-PowerShellStandardPublishDuplicateProbeTarget -Project $Project -PackageId $PowerShellStandardPackageId -PackageVersion $PowerShellStandardPackageVersion -SdkPackageId $PackageId -SdkPackageVersion $NormalizedPackageVersion -RuntimeAssetGroup $RuntimeAssetGroup -TargetFramework $TargetFramework
   }
   $Project.Save($ProjectPath)
 
-  Invoke-DotNet @('add', $ProjectPath, 'package', $PackageId, '--version', $PowerShellVersion, '--no-restore')
+  Invoke-DotNet @('add', $ProjectPath, 'package', $PackageId, '--version', $PackageVersion, '--no-restore')
   Invoke-DotNet @('restore', $ProjectPath, '--configfile', (Join-Path $SampleDirectory 'nuget.config'), '--verbosity', 'minimal')
 
   $AssetsPath = Join-Path (Split-Path $ProjectPath -Parent) 'obj/project.assets.json'
@@ -993,7 +1043,7 @@ foreach (PSObject result in ps.Invoke())
   }
 
   $RestoredSdkPackageDirectoryName = $PackageId.ToLowerInvariant()
-  $RestoredSdkPath = Join-Path $PackagesDirectory (Join-Path $RestoredSdkPackageDirectoryName $PowerShellVersion)
+  $RestoredSdkPath = Join-Path $PackagesDirectory (Join-Path $RestoredSdkPackageDirectoryName $NormalizedPackageVersion)
   foreach ($RelativePath in $ExpectedPackageEntries) {
     $RestoredPath = Join-Path $RestoredSdkPath ($RelativePath -replace '/', [System.IO.Path]::DirectorySeparatorChar)
     if (-not (Test-Path $RestoredPath -PathType Leaf)) {
@@ -1152,7 +1202,7 @@ foreach (PSObject result in ps.Invoke())
   $PSGalleryPublishRuntimeNativePwshPath = Assert-RuntimeNativeAppHostOutput -Directory $PSGalleryPublishDirectory -RuntimeIdentifier $RuntimeIdentifier -ExecutableName $ExecutableName -SelfContained $false -Description "Sample PSGallery publish output [$RuntimeIdentifier]"
   [void] (Invoke-PwshVersionCheck -PwshPath $PSGalleryPublishRuntimeNativePwshPath -ExpectedVersion $PowerShellVersion)
 
-  Write-Host "Validated $PackageId $PowerShellVersion from $($Package.FullName)"
+  Write-Host "Validated $PackageId $PackageVersion from $($Package.FullName)"
   Write-Host "Sample app imported vendored PowerShell SDK $($AppVersion.Trim())"
   Write-Host "Sample self-contained publish runtime-native apphost reported PowerShell $PwshVersion"
   Write-Host "Sample framework-dependent publish runtime-native apphost reported PowerShell $PowerShellVersion"

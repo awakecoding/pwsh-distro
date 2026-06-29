@@ -107,6 +107,13 @@ $Version = $SdkPins['POWERSHELL_VERSION']
 $ReleaseTag = $SdkPins['POWERSHELL_RELEASE_TAG']
 $UpstreamTag = $SdkPins['POWERSHELL_UPSTREAM_TAG']
 $SourceRef = $SdkPins['POWERSHELL_SOURCE_REF']
+$SdkWorkflowText = Get-RepositoryFileText $SdkWorkflow
+$SdkPackageId = Get-YamlScalar -Text $SdkWorkflowText -Name 'SDK_PACKAGE_ID' -FileName $SdkWorkflow
+$SdkPackageRevision = Get-YamlScalar -Text $SdkWorkflowText -Name 'SDK_PACKAGE_REVISION' -FileName $SdkWorkflow
+if ($SdkPackageRevision -notmatch '^\d+$') {
+  Add-AuditError "SDK_PACKAGE_REVISION in $SdkWorkflow must be numeric, found '$SdkPackageRevision'."
+}
+$SdkPackageVersion = "$Version.$SdkPackageRevision"
 
 Assert-Equal -Actual $ReleaseTag -Expected "v$Version" -Description 'POWERSHELL_RELEASE_TAG'
 Assert-Equal -Actual $UpstreamTag -Expected "upstream/$ReleaseTag" -Description 'POWERSHELL_UPSTREAM_TAG'
@@ -140,6 +147,17 @@ if ($ReadmeSourceMatch.Success) {
   Assert-Equal -Actual $ReadmeSourceMatch.Groups[2].Value -Expected $UpstreamTag -Description 'README PowerShell upstream base tag'
 } else {
   Add-AuditError 'README Current pins table is missing the PowerShell downstream source ref row.'
+}
+
+$ReadmeSdkPackageMatch = [regex]::Match(
+  $ReadmeText,
+  'PowerShell SDK package \| `([^`]+)` / `([^`]+)`',
+  [System.Text.RegularExpressions.RegexOptions]::Multiline)
+if ($ReadmeSdkPackageMatch.Success) {
+  Assert-Equal -Actual $ReadmeSdkPackageMatch.Groups[1].Value -Expected $SdkPackageId -Description 'README PowerShell SDK package ID'
+  Assert-Equal -Actual $ReadmeSdkPackageMatch.Groups[2].Value -Expected $SdkPackageVersion -Description 'README PowerShell SDK package version'
+} else {
+  Add-AuditError 'README Current pins table is missing the PowerShell SDK package row.'
 }
 
 $ReadmeFrameworkMatch = [regex]::Match(

@@ -1,5 +1,11 @@
 name: PowerShell SDK
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      sdk_package_revision:
+        description: Downstream SDK package revision for the current upstream PowerShell version
+        default: "0"
+        required: true
 env:
   POWERSHELL_VERSION: "7.6.3"
   POWERSHELL_RELEASE_TAG: "v7.6.3"
@@ -8,6 +14,7 @@ env:
   POWERSHELL_SOURCE_REF: "downstream/v7.6.3"
   SDK_VENDOR_NAME: "Devolutions"
   SDK_PACKAGE_ID: "Devolutions.PowerShell.SDK"
+  SDK_PACKAGE_REVISION: "0"
   MULTI_PWSH_APPHOST_PACKAGE_ID: "Devolutions.MultiPwsh.Cli"
   MULTI_PWSH_APPHOST_PACKAGE_VERSION: "0.14.0"
   MULTI_PWSH_APPHOST_PACKAGE_SOURCE: "https://api.nuget.org/v3/index.json"
@@ -84,6 +91,11 @@ jobs:
           if ($Env:POWERSHELL_VERSION -ne $ExpectedVersion) {
             throw "POWERSHELL_VERSION '$Env:POWERSHELL_VERSION' does not match POWERSHELL_RELEASE_TAG '$Env:POWERSHELL_RELEASE_TAG'."
           }
+          $SdkPackageRevision = '${{ inputs.sdk_package_revision }}'
+          if ($SdkPackageRevision -notmatch '^\d+$') {
+            throw "SDK package revision '$SdkPackageRevision' must be numeric."
+          }
+          Write-Host "SDK package version: $Env:POWERSHELL_VERSION.$SdkPackageRevision"
 
           $SourceCommit = (Invoke-GitPowerShell rev-parse HEAD).Trim()
           Write-Host "PowerShell source: $Env:POWERSHELL_SOURCE_REPOSITORY@$Env:POWERSHELL_SOURCE_REF ($SourceCommit)"
@@ -774,6 +786,13 @@ jobs:
             }
           }
 
+          $SdkPackageRevision = '${{ inputs.sdk_package_revision }}'
+          if ($SdkPackageRevision -notmatch '^\d+$') {
+            throw "SDK package revision '$SdkPackageRevision' must be numeric."
+          }
+          $SdkPackageVersion = "$Env:POWERSHELL_VERSION.$SdkPackageRevision"
+          Write-Host "SDK package version: $SdkPackageVersion"
+
           $PackageOutputPath = Join-Path $PWD "package"
           $PackageStageRoot = Join-Path $PWD "nupkg-stage"
           Remove-Item $PackageOutputPath -Recurse -Force -ErrorAction SilentlyContinue
@@ -873,6 +892,7 @@ jobs:
           ../eng/Vendor-PowerShellSdkPackage.ps1 `
             -PackageRoot $SdkStagePath `
             -PowerShellVersion $Env:POWERSHELL_VERSION `
+            -PackageVersion $SdkPackageVersion `
             -PackageId $Env:SDK_PACKAGE_ID `
             -VendorName $Env:SDK_VENDOR_NAME `
             -OverlayPathMap $SdkOverlayPathMap
@@ -941,7 +961,7 @@ jobs:
       - name: Upload PowerShell package
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: PowerShell-SDK-${{env.POWERSHELL_VERSION}}
+          name: PowerShell-SDK-${{env.POWERSHELL_VERSION}}.${{inputs.sdk_package_revision}}
           path: "pwsh-src/package/*.nupkg"
 
   validate:
@@ -982,7 +1002,7 @@ jobs:
       - name: Download PowerShell SDK package
         uses: actions/download-artifact@v8.0.1
         with:
-          name: PowerShell-SDK-${{env.POWERSHELL_VERSION}}
+          name: PowerShell-SDK-${{env.POWERSHELL_VERSION}}.${{inputs.sdk_package_revision}}
           path: sdk-package
 
       - name: Validate PowerShell SDK package
@@ -997,10 +1017,16 @@ jobs:
           if (-not $TargetFramework) {
             throw "Unable to determine PowerShell TargetFramework from PowerShell.Common.props"
           }
+          $SdkPackageRevision = '${{ inputs.sdk_package_revision }}'
+          if ($SdkPackageRevision -notmatch '^\d+$') {
+            throw "SDK package revision '$SdkPackageRevision' must be numeric."
+          }
+          $SdkPackageVersion = "$Env:POWERSHELL_VERSION.$SdkPackageRevision"
 
           ./eng/Validate-PowerShellSdkPackage.ps1 `
             -PackageDirectory ./sdk-package `
             -PowerShellVersion $Env:POWERSHELL_VERSION `
+            -PackageVersion $SdkPackageVersion `
             -TargetFramework $TargetFramework `
             -RuntimeIdentifier ${{matrix.rid}} `
             -PackageId $Env:SDK_PACKAGE_ID `

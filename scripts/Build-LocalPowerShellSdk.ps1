@@ -6,6 +6,8 @@ param(
 
   [string] $PackageId = 'Devolutions.PowerShell.SDK',
 
+  [string] $SdkPackageVersion,
+
   [string] $VendorName = 'Devolutions',
 
   [string] $MultiPwshPackageId = 'Devolutions.MultiPwsh.Cli',
@@ -101,6 +103,44 @@ function Get-AppHostExecutableName {
   }
 
   return 'pwsh'
+}
+
+function Assert-SdkPackageVersion {
+  param(
+    [Parameter(Mandatory)]
+    [string] $PowerShellVersion,
+
+    [Parameter(Mandatory)]
+    [string] $PackageVersion
+  )
+
+  $PowerShellVersionParts = $PowerShellVersion -split '\.'
+  $PackageVersionParts = $PackageVersion -split '\.'
+  if ($PowerShellVersionParts.Count -ne 3 -or $PackageVersionParts.Count -ne 4) {
+    throw "SDK package version '$PackageVersion' must use '$PowerShellVersion.<revision>'."
+  }
+
+  if (($PackageVersionParts[0..2] -join '.') -ne $PowerShellVersion) {
+    throw "SDK package version '$PackageVersion' must use PowerShell upstream version '$PowerShellVersion' as its first three elements."
+  }
+
+  if ($PackageVersionParts[3] -notmatch '^\d+$') {
+    throw "SDK package version '$PackageVersion' must use a numeric fourth-element revision."
+  }
+}
+
+function Get-NormalizedNuGetPackageVersion {
+  param(
+    [Parameter(Mandatory)]
+    [string] $PackageVersion
+  )
+
+  $Version = [version]::Parse($PackageVersion)
+  if ($Version.Revision -eq 0) {
+    return "$($Version.Major).$($Version.Minor).$($Version.Build)"
+  }
+
+  return $PackageVersion
 }
 
 function Get-DotNetSdkBasePath {
@@ -445,6 +485,11 @@ function Copy-PSGalleryModulesToPackage {
 if (-not $RuntimeIdentifier) {
   $RuntimeIdentifier = Get-DefaultRuntimeIdentifier
 }
+if ([string]::IsNullOrWhiteSpace($SdkPackageVersion)) {
+  $SdkPackageVersion = "$PowerShellVersion.0"
+}
+Assert-SdkPackageVersion -PowerShellVersion $PowerShellVersion -PackageVersion $SdkPackageVersion
+$NormalizedSdkPackageVersion = Get-NormalizedNuGetPackageVersion -PackageVersion $SdkPackageVersion
 
 $RepositoryRoot = (Invoke-GitOutput rev-parse --show-toplevel | Select-Object -First 1).Trim()
 if (-not $RepositoryRoot) {
@@ -579,6 +624,7 @@ try {
   & (Join-Path $RepositoryRoot 'eng\Vendor-PowerShellSdkPackage.ps1') `
     -PackageRoot $SdkStagePath `
     -PowerShellVersion $PowerShellVersion `
+    -PackageVersion $SdkPackageVersion `
     -PackageId $PackageId `
     -VendorName $VendorName `
     -OverlayPathMap $SdkOverlayPathMap
@@ -634,17 +680,18 @@ try {
     Pop-Location
   }
 
-  $Package = Get-ChildItem -LiteralPath $PackageOutputPath -Filter "$PackageId.$PowerShellVersion*.nupkg" |
+  $Package = Get-ChildItem -LiteralPath $PackageOutputPath -Filter "$PackageId.$NormalizedSdkPackageVersion*.nupkg" |
     Sort-Object LastWriteTime -Descending |
     Select-Object -First 1
   if (-not $Package) {
-    throw "Failed to create $PackageId.$PowerShellVersion package in $PackageOutputPath"
+    throw "Failed to create $PackageId.$SdkPackageVersion package in $PackageOutputPath"
   }
 
   if ($Validate) {
     & (Join-Path $RepositoryRoot 'eng\Validate-PowerShellSdkPackage.ps1') `
       -PackageDirectory $PackageOutputPath `
       -PowerShellVersion $PowerShellVersion `
+      -PackageVersion $SdkPackageVersion `
       -TargetFramework $TargetFramework `
       -RuntimeIdentifier $RuntimeIdentifier `
       -PackageId $PackageId `
