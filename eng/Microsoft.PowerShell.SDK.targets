@@ -254,31 +254,87 @@
           Condition="'@(_PowerShellSDKRuntimeNativeOsxArm64File)' != ''" />
     <ItemGroup>
       <_PowerShellSDKRuntimeNativeOutputPayloadFile Include="$(OutDir)*.dll" />
+      <_PowerShellSDKRuntimeNativeWinX64DependencySourceFile Include="$(OutDir)runtimes/win-x64/lib/**/*.dll" />
+      <_PowerShellSDKRuntimeNativeWinArm64DependencySourceFile Include="$(OutDir)runtimes/win-arm64/lib/**/*.dll" />
+      <_PowerShellSDKRuntimeNativeLinuxX64DependencySourceFile Include="$(OutDir)runtimes/linux-x64/lib/**/*.dll" />
+      <_PowerShellSDKRuntimeNativeLinuxArm64DependencySourceFile Include="$(OutDir)runtimes/linux-arm64/lib/**/*.dll" />
+      <_PowerShellSDKRuntimeNativeOsxX64DependencySourceFile Include="$(OutDir)runtimes/osx-x64/lib/**/*.dll" />
+      <_PowerShellSDKRuntimeNativeOsxArm64DependencySourceFile Include="$(OutDir)runtimes/osx-arm64/lib/**/*.dll" />
+      <_PowerShellSDKRuntimeNativeWinX64DependencyFile Include="@(_PowerShellSDKRuntimeNativeWinX64DependencySourceFile)"
+                                                       Condition="'@(_PowerShellSDKRuntimeNativeWinX64File)' != '' and !Exists('$(OutDir)runtimes/win-x64/native/%(_PowerShellSDKRuntimeNativeWinX64DependencySourceFile.Filename)%(_PowerShellSDKRuntimeNativeWinX64DependencySourceFile.Extension)')" />
+      <_PowerShellSDKRuntimeNativeWinArm64DependencyFile Include="@(_PowerShellSDKRuntimeNativeWinArm64DependencySourceFile)"
+                                                         Condition="'@(_PowerShellSDKRuntimeNativeWinArm64File)' != '' and !Exists('$(OutDir)runtimes/win-arm64/native/%(_PowerShellSDKRuntimeNativeWinArm64DependencySourceFile.Filename)%(_PowerShellSDKRuntimeNativeWinArm64DependencySourceFile.Extension)')" />
+      <_PowerShellSDKRuntimeNativeLinuxX64DependencyFile Include="@(_PowerShellSDKRuntimeNativeLinuxX64DependencySourceFile)"
+                                                         Condition="'@(_PowerShellSDKRuntimeNativeLinuxX64File)' != '' and !Exists('$(OutDir)runtimes/linux-x64/native/%(_PowerShellSDKRuntimeNativeLinuxX64DependencySourceFile.Filename)%(_PowerShellSDKRuntimeNativeLinuxX64DependencySourceFile.Extension)')" />
+      <_PowerShellSDKRuntimeNativeLinuxArm64DependencyFile Include="@(_PowerShellSDKRuntimeNativeLinuxArm64DependencySourceFile)"
+                                                           Condition="'@(_PowerShellSDKRuntimeNativeLinuxArm64File)' != '' and !Exists('$(OutDir)runtimes/linux-arm64/native/%(_PowerShellSDKRuntimeNativeLinuxArm64DependencySourceFile.Filename)%(_PowerShellSDKRuntimeNativeLinuxArm64DependencySourceFile.Extension)')" />
+      <_PowerShellSDKRuntimeNativeOsxX64DependencyFile Include="@(_PowerShellSDKRuntimeNativeOsxX64DependencySourceFile)"
+                                                       Condition="'@(_PowerShellSDKRuntimeNativeOsxX64File)' != '' and !Exists('$(OutDir)runtimes/osx-x64/native/%(_PowerShellSDKRuntimeNativeOsxX64DependencySourceFile.Filename)%(_PowerShellSDKRuntimeNativeOsxX64DependencySourceFile.Extension)')" />
+      <_PowerShellSDKRuntimeNativeOsxArm64DependencyFile Include="@(_PowerShellSDKRuntimeNativeOsxArm64DependencySourceFile)"
+                                                         Condition="'@(_PowerShellSDKRuntimeNativeOsxArm64File)' != '' and !Exists('$(OutDir)runtimes/osx-arm64/native/%(_PowerShellSDKRuntimeNativeOsxArm64DependencySourceFile.Filename)%(_PowerShellSDKRuntimeNativeOsxArm64DependencySourceFile.Extension)')" />
     </ItemGroup>
-    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeOutputPayloadFile)"
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeWinX64DependencyFile)"
           DestinationFolder="$(OutDir)runtimes/win-x64/native"
           SkipUnchangedFiles="true"
-          Condition="'@(_PowerShellSDKRuntimeNativeWinX64File)' != ''" />
-    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeOutputPayloadFile)"
+          Condition="'@(_PowerShellSDKRuntimeNativeWinX64DependencyFile)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeWinArm64DependencyFile)"
           DestinationFolder="$(OutDir)runtimes/win-arm64/native"
           SkipUnchangedFiles="true"
-          Condition="'@(_PowerShellSDKRuntimeNativeWinArm64File)' != ''" />
-    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeOutputPayloadFile)"
+          Condition="'@(_PowerShellSDKRuntimeNativeWinArm64DependencyFile)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeLinuxX64DependencyFile)"
           DestinationFolder="$(OutDir)runtimes/linux-x64/native"
           SkipUnchangedFiles="true"
-          Condition="'@(_PowerShellSDKRuntimeNativeLinuxX64File)' != ''" />
-    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeOutputPayloadFile)"
+          Condition="'@(_PowerShellSDKRuntimeNativeLinuxX64DependencyFile)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeLinuxArm64DependencyFile)"
           DestinationFolder="$(OutDir)runtimes/linux-arm64/native"
           SkipUnchangedFiles="true"
-          Condition="'@(_PowerShellSDKRuntimeNativeLinuxArm64File)' != ''" />
-    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeOutputPayloadFile)"
+          Condition="'@(_PowerShellSDKRuntimeNativeLinuxArm64DependencyFile)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeOsxX64DependencyFile)"
           DestinationFolder="$(OutDir)runtimes/osx-x64/native"
           SkipUnchangedFiles="true"
-          Condition="'@(_PowerShellSDKRuntimeNativeOsxX64File)' != ''" />
-    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeOutputPayloadFile)"
+          Condition="'@(_PowerShellSDKRuntimeNativeOsxX64DependencyFile)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeOsxArm64DependencyFile)"
           DestinationFolder="$(OutDir)runtimes/osx-arm64/native"
           SkipUnchangedFiles="true"
-          Condition="'@(_PowerShellSDKRuntimeNativeOsxArm64File)' != ''" />
+          Condition="'@(_PowerShellSDKRuntimeNativeOsxArm64DependencyFile)' != ''" />
+    <ItemGroup>
+      <_PowerShellSDKRuntimeNativeWinX64OutputPayloadFile Include="@(_PowerShellSDKRuntimeNativeOutputPayloadFile)"
+                                                          Condition="'@(_PowerShellSDKRuntimeNativeWinX64File)' != '' and !Exists('$(OutDir)runtimes/win-x64/native/%(_PowerShellSDKRuntimeNativeOutputPayloadFile.Filename)%(_PowerShellSDKRuntimeNativeOutputPayloadFile.Extension)')" />
+      <_PowerShellSDKRuntimeNativeWinArm64OutputPayloadFile Include="@(_PowerShellSDKRuntimeNativeOutputPayloadFile)"
+                                                            Condition="'@(_PowerShellSDKRuntimeNativeWinArm64File)' != '' and !Exists('$(OutDir)runtimes/win-arm64/native/%(_PowerShellSDKRuntimeNativeOutputPayloadFile.Filename)%(_PowerShellSDKRuntimeNativeOutputPayloadFile.Extension)')" />
+      <_PowerShellSDKRuntimeNativeLinuxX64OutputPayloadFile Include="@(_PowerShellSDKRuntimeNativeOutputPayloadFile)"
+                                                            Condition="'@(_PowerShellSDKRuntimeNativeLinuxX64File)' != '' and !Exists('$(OutDir)runtimes/linux-x64/native/%(_PowerShellSDKRuntimeNativeOutputPayloadFile.Filename)%(_PowerShellSDKRuntimeNativeOutputPayloadFile.Extension)')" />
+      <_PowerShellSDKRuntimeNativeLinuxArm64OutputPayloadFile Include="@(_PowerShellSDKRuntimeNativeOutputPayloadFile)"
+                                                              Condition="'@(_PowerShellSDKRuntimeNativeLinuxArm64File)' != '' and !Exists('$(OutDir)runtimes/linux-arm64/native/%(_PowerShellSDKRuntimeNativeOutputPayloadFile.Filename)%(_PowerShellSDKRuntimeNativeOutputPayloadFile.Extension)')" />
+      <_PowerShellSDKRuntimeNativeOsxX64OutputPayloadFile Include="@(_PowerShellSDKRuntimeNativeOutputPayloadFile)"
+                                                          Condition="'@(_PowerShellSDKRuntimeNativeOsxX64File)' != '' and !Exists('$(OutDir)runtimes/osx-x64/native/%(_PowerShellSDKRuntimeNativeOutputPayloadFile.Filename)%(_PowerShellSDKRuntimeNativeOutputPayloadFile.Extension)')" />
+      <_PowerShellSDKRuntimeNativeOsxArm64OutputPayloadFile Include="@(_PowerShellSDKRuntimeNativeOutputPayloadFile)"
+                                                            Condition="'@(_PowerShellSDKRuntimeNativeOsxArm64File)' != '' and !Exists('$(OutDir)runtimes/osx-arm64/native/%(_PowerShellSDKRuntimeNativeOutputPayloadFile.Filename)%(_PowerShellSDKRuntimeNativeOutputPayloadFile.Extension)')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeWinX64OutputPayloadFile)"
+          DestinationFolder="$(OutDir)runtimes/win-x64/native"
+          SkipUnchangedFiles="true"
+          Condition="'@(_PowerShellSDKRuntimeNativeWinX64OutputPayloadFile)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeWinArm64OutputPayloadFile)"
+          DestinationFolder="$(OutDir)runtimes/win-arm64/native"
+          SkipUnchangedFiles="true"
+          Condition="'@(_PowerShellSDKRuntimeNativeWinArm64OutputPayloadFile)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeLinuxX64OutputPayloadFile)"
+          DestinationFolder="$(OutDir)runtimes/linux-x64/native"
+          SkipUnchangedFiles="true"
+          Condition="'@(_PowerShellSDKRuntimeNativeLinuxX64OutputPayloadFile)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeLinuxArm64OutputPayloadFile)"
+          DestinationFolder="$(OutDir)runtimes/linux-arm64/native"
+          SkipUnchangedFiles="true"
+          Condition="'@(_PowerShellSDKRuntimeNativeLinuxArm64OutputPayloadFile)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeOsxX64OutputPayloadFile)"
+          DestinationFolder="$(OutDir)runtimes/osx-x64/native"
+          SkipUnchangedFiles="true"
+          Condition="'@(_PowerShellSDKRuntimeNativeOsxX64OutputPayloadFile)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeOsxArm64OutputPayloadFile)"
+          DestinationFolder="$(OutDir)runtimes/osx-arm64/native"
+          SkipUnchangedFiles="true"
+          Condition="'@(_PowerShellSDKRuntimeNativeOsxArm64OutputPayloadFile)' != ''" />
     <Exec Command="chmod +x &quot;$(OutDir)runtimes/linux-x64/native/pwsh&quot;"
           Condition="'$(OS)' != 'Windows_NT' and Exists('$(OutDir)runtimes/linux-x64/native/pwsh')" />
     <Exec Command="chmod +x &quot;$(OutDir)runtimes/linux-arm64/native/pwsh&quot;"
@@ -362,31 +418,87 @@
           Condition="('$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'true' or '$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'True') and ('$(PowerShellSDKRuntimeNativeAppHostCopyToPublish)' == 'true' or '$(PowerShellSDKRuntimeNativeAppHostCopyToPublish)' == 'True')">
     <ItemGroup>
       <_PowerShellSDKRuntimeNativePublishPayloadFile Include="$(PublishDir)*.dll" />
+      <_PowerShellSDKRuntimeNativePublishWinX64DependencySourceFile Include="$(PublishDir)runtimes/win-x64/lib/**/*.dll" />
+      <_PowerShellSDKRuntimeNativePublishWinArm64DependencySourceFile Include="$(PublishDir)runtimes/win-arm64/lib/**/*.dll" />
+      <_PowerShellSDKRuntimeNativePublishLinuxX64DependencySourceFile Include="$(PublishDir)runtimes/linux-x64/lib/**/*.dll" />
+      <_PowerShellSDKRuntimeNativePublishLinuxArm64DependencySourceFile Include="$(PublishDir)runtimes/linux-arm64/lib/**/*.dll" />
+      <_PowerShellSDKRuntimeNativePublishOsxX64DependencySourceFile Include="$(PublishDir)runtimes/osx-x64/lib/**/*.dll" />
+      <_PowerShellSDKRuntimeNativePublishOsxArm64DependencySourceFile Include="$(PublishDir)runtimes/osx-arm64/lib/**/*.dll" />
+      <_PowerShellSDKRuntimeNativePublishWinX64DependencyFile Include="@(_PowerShellSDKRuntimeNativePublishWinX64DependencySourceFile)"
+                                                              Condition="Exists('$(PublishDir)runtimes/win-x64/native') and !Exists('$(PublishDir)runtimes/win-x64/native/%(_PowerShellSDKRuntimeNativePublishWinX64DependencySourceFile.Filename)%(_PowerShellSDKRuntimeNativePublishWinX64DependencySourceFile.Extension)')" />
+      <_PowerShellSDKRuntimeNativePublishWinArm64DependencyFile Include="@(_PowerShellSDKRuntimeNativePublishWinArm64DependencySourceFile)"
+                                                                Condition="Exists('$(PublishDir)runtimes/win-arm64/native') and !Exists('$(PublishDir)runtimes/win-arm64/native/%(_PowerShellSDKRuntimeNativePublishWinArm64DependencySourceFile.Filename)%(_PowerShellSDKRuntimeNativePublishWinArm64DependencySourceFile.Extension)')" />
+      <_PowerShellSDKRuntimeNativePublishLinuxX64DependencyFile Include="@(_PowerShellSDKRuntimeNativePublishLinuxX64DependencySourceFile)"
+                                                                Condition="Exists('$(PublishDir)runtimes/linux-x64/native') and !Exists('$(PublishDir)runtimes/linux-x64/native/%(_PowerShellSDKRuntimeNativePublishLinuxX64DependencySourceFile.Filename)%(_PowerShellSDKRuntimeNativePublishLinuxX64DependencySourceFile.Extension)')" />
+      <_PowerShellSDKRuntimeNativePublishLinuxArm64DependencyFile Include="@(_PowerShellSDKRuntimeNativePublishLinuxArm64DependencySourceFile)"
+                                                                  Condition="Exists('$(PublishDir)runtimes/linux-arm64/native') and !Exists('$(PublishDir)runtimes/linux-arm64/native/%(_PowerShellSDKRuntimeNativePublishLinuxArm64DependencySourceFile.Filename)%(_PowerShellSDKRuntimeNativePublishLinuxArm64DependencySourceFile.Extension)')" />
+      <_PowerShellSDKRuntimeNativePublishOsxX64DependencyFile Include="@(_PowerShellSDKRuntimeNativePublishOsxX64DependencySourceFile)"
+                                                              Condition="Exists('$(PublishDir)runtimes/osx-x64/native') and !Exists('$(PublishDir)runtimes/osx-x64/native/%(_PowerShellSDKRuntimeNativePublishOsxX64DependencySourceFile.Filename)%(_PowerShellSDKRuntimeNativePublishOsxX64DependencySourceFile.Extension)')" />
+      <_PowerShellSDKRuntimeNativePublishOsxArm64DependencyFile Include="@(_PowerShellSDKRuntimeNativePublishOsxArm64DependencySourceFile)"
+                                                                Condition="Exists('$(PublishDir)runtimes/osx-arm64/native') and !Exists('$(PublishDir)runtimes/osx-arm64/native/%(_PowerShellSDKRuntimeNativePublishOsxArm64DependencySourceFile.Filename)%(_PowerShellSDKRuntimeNativePublishOsxArm64DependencySourceFile.Extension)')" />
     </ItemGroup>
-    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativePublishPayloadFile)"
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativePublishWinX64DependencyFile)"
           DestinationFolder="$(PublishDir)runtimes/win-x64/native"
           SkipUnchangedFiles="true"
-          Condition="Exists('$(PublishDir)runtimes/win-x64/native')" />
-    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativePublishPayloadFile)"
+          Condition="'@(_PowerShellSDKRuntimeNativePublishWinX64DependencyFile)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativePublishWinArm64DependencyFile)"
           DestinationFolder="$(PublishDir)runtimes/win-arm64/native"
           SkipUnchangedFiles="true"
-          Condition="Exists('$(PublishDir)runtimes/win-arm64/native')" />
-    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativePublishPayloadFile)"
+          Condition="'@(_PowerShellSDKRuntimeNativePublishWinArm64DependencyFile)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativePublishLinuxX64DependencyFile)"
           DestinationFolder="$(PublishDir)runtimes/linux-x64/native"
           SkipUnchangedFiles="true"
-          Condition="Exists('$(PublishDir)runtimes/linux-x64/native')" />
-    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativePublishPayloadFile)"
+          Condition="'@(_PowerShellSDKRuntimeNativePublishLinuxX64DependencyFile)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativePublishLinuxArm64DependencyFile)"
           DestinationFolder="$(PublishDir)runtimes/linux-arm64/native"
           SkipUnchangedFiles="true"
-          Condition="Exists('$(PublishDir)runtimes/linux-arm64/native')" />
-    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativePublishPayloadFile)"
+          Condition="'@(_PowerShellSDKRuntimeNativePublishLinuxArm64DependencyFile)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativePublishOsxX64DependencyFile)"
           DestinationFolder="$(PublishDir)runtimes/osx-x64/native"
           SkipUnchangedFiles="true"
-          Condition="Exists('$(PublishDir)runtimes/osx-x64/native')" />
-    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativePublishPayloadFile)"
+          Condition="'@(_PowerShellSDKRuntimeNativePublishOsxX64DependencyFile)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativePublishOsxArm64DependencyFile)"
           DestinationFolder="$(PublishDir)runtimes/osx-arm64/native"
           SkipUnchangedFiles="true"
-          Condition="Exists('$(PublishDir)runtimes/osx-arm64/native')" />
+          Condition="'@(_PowerShellSDKRuntimeNativePublishOsxArm64DependencyFile)' != ''" />
+    <ItemGroup>
+      <_PowerShellSDKRuntimeNativePublishWinX64PayloadFile Include="@(_PowerShellSDKRuntimeNativePublishPayloadFile)"
+                                                           Condition="Exists('$(PublishDir)runtimes/win-x64/native') and !Exists('$(PublishDir)runtimes/win-x64/native/%(_PowerShellSDKRuntimeNativePublishPayloadFile.Filename)%(_PowerShellSDKRuntimeNativePublishPayloadFile.Extension)')" />
+      <_PowerShellSDKRuntimeNativePublishWinArm64PayloadFile Include="@(_PowerShellSDKRuntimeNativePublishPayloadFile)"
+                                                             Condition="Exists('$(PublishDir)runtimes/win-arm64/native') and !Exists('$(PublishDir)runtimes/win-arm64/native/%(_PowerShellSDKRuntimeNativePublishPayloadFile.Filename)%(_PowerShellSDKRuntimeNativePublishPayloadFile.Extension)')" />
+      <_PowerShellSDKRuntimeNativePublishLinuxX64PayloadFile Include="@(_PowerShellSDKRuntimeNativePublishPayloadFile)"
+                                                             Condition="Exists('$(PublishDir)runtimes/linux-x64/native') and !Exists('$(PublishDir)runtimes/linux-x64/native/%(_PowerShellSDKRuntimeNativePublishPayloadFile.Filename)%(_PowerShellSDKRuntimeNativePublishPayloadFile.Extension)')" />
+      <_PowerShellSDKRuntimeNativePublishLinuxArm64PayloadFile Include="@(_PowerShellSDKRuntimeNativePublishPayloadFile)"
+                                                               Condition="Exists('$(PublishDir)runtimes/linux-arm64/native') and !Exists('$(PublishDir)runtimes/linux-arm64/native/%(_PowerShellSDKRuntimeNativePublishPayloadFile.Filename)%(_PowerShellSDKRuntimeNativePublishPayloadFile.Extension)')" />
+      <_PowerShellSDKRuntimeNativePublishOsxX64PayloadFile Include="@(_PowerShellSDKRuntimeNativePublishPayloadFile)"
+                                                           Condition="Exists('$(PublishDir)runtimes/osx-x64/native') and !Exists('$(PublishDir)runtimes/osx-x64/native/%(_PowerShellSDKRuntimeNativePublishPayloadFile.Filename)%(_PowerShellSDKRuntimeNativePublishPayloadFile.Extension)')" />
+      <_PowerShellSDKRuntimeNativePublishOsxArm64PayloadFile Include="@(_PowerShellSDKRuntimeNativePublishPayloadFile)"
+                                                             Condition="Exists('$(PublishDir)runtimes/osx-arm64/native') and !Exists('$(PublishDir)runtimes/osx-arm64/native/%(_PowerShellSDKRuntimeNativePublishPayloadFile.Filename)%(_PowerShellSDKRuntimeNativePublishPayloadFile.Extension)')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativePublishWinX64PayloadFile)"
+          DestinationFolder="$(PublishDir)runtimes/win-x64/native"
+          SkipUnchangedFiles="true"
+          Condition="'@(_PowerShellSDKRuntimeNativePublishWinX64PayloadFile)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativePublishWinArm64PayloadFile)"
+          DestinationFolder="$(PublishDir)runtimes/win-arm64/native"
+          SkipUnchangedFiles="true"
+          Condition="'@(_PowerShellSDKRuntimeNativePublishWinArm64PayloadFile)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativePublishLinuxX64PayloadFile)"
+          DestinationFolder="$(PublishDir)runtimes/linux-x64/native"
+          SkipUnchangedFiles="true"
+          Condition="'@(_PowerShellSDKRuntimeNativePublishLinuxX64PayloadFile)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativePublishLinuxArm64PayloadFile)"
+          DestinationFolder="$(PublishDir)runtimes/linux-arm64/native"
+          SkipUnchangedFiles="true"
+          Condition="'@(_PowerShellSDKRuntimeNativePublishLinuxArm64PayloadFile)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativePublishOsxX64PayloadFile)"
+          DestinationFolder="$(PublishDir)runtimes/osx-x64/native"
+          SkipUnchangedFiles="true"
+          Condition="'@(_PowerShellSDKRuntimeNativePublishOsxX64PayloadFile)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativePublishOsxArm64PayloadFile)"
+          DestinationFolder="$(PublishDir)runtimes/osx-arm64/native"
+          SkipUnchangedFiles="true"
+          Condition="'@(_PowerShellSDKRuntimeNativePublishOsxArm64PayloadFile)' != ''" />
   </Target>
 
   <Target Name="PowerShellSDKRewriteSelfContainedPublishedRuntimeConfig"
