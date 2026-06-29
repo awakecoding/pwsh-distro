@@ -135,13 +135,45 @@
     <PowerShellSDKIncludeRuntimeNativeAppHosts Condition="'$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == ''">false</PowerShellSDKIncludeRuntimeNativeAppHosts>
     <PowerShellSDKRuntimeNativeAppHostCopyToOutput Condition="'$(PowerShellSDKRuntimeNativeAppHostCopyToOutput)' == ''">true</PowerShellSDKRuntimeNativeAppHostCopyToOutput>
     <PowerShellSDKRuntimeNativeAppHostCopyToPublish Condition="'$(PowerShellSDKRuntimeNativeAppHostCopyToPublish)' == ''">true</PowerShellSDKRuntimeNativeAppHostCopyToPublish>
+    <_PowerShellSDKRuntimeNativeCopyToOutputEnabled Condition="('$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'true' or '$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'True') and ('$(PowerShellSDKRuntimeNativeAppHostCopyToOutput)' == 'true' or '$(PowerShellSDKRuntimeNativeAppHostCopyToOutput)' == 'True')">true</_PowerShellSDKRuntimeNativeCopyToOutputEnabled>
+    <_PowerShellSDKRuntimeNativeCopyToPublishEnabled Condition="('$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'true' or '$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'True') and ('$(PowerShellSDKRuntimeNativeAppHostCopyToPublish)' == 'true' or '$(PowerShellSDKRuntimeNativeAppHostCopyToPublish)' == 'True')">true</_PowerShellSDKRuntimeNativeCopyToPublishEnabled>
   </PropertyGroup>
 
   <Target Name="_PowerShellSDKRemoveAutomaticRuntimeNativeCopyItems"
-          AfterTargets="ResolvePackageAssets">
+          AfterTargets="ResolvePackageAssets"
+          BeforeTargets="ResolveLockFileCopyLocalFiles;RunProduceContentAssets">
     <ItemGroup>
       <NativeCopyLocalItems Remove="@(NativeCopyLocalItems)"
                             Condition="'%(NativeCopyLocalItems.NuGetPackageId)' == 'Devolutions.PowerShell.SDK' and $([System.String]::Copy('%(NativeCopyLocalItems.PathInPackage)').Contains('/native/'))" />
+      <RuntimeCopyLocalItems Condition="'$(_PowerShellSDKRuntimeNativeCopyToOutputEnabled)' == 'true' and '%(RuntimeCopyLocalItems.NuGetPackageId)' == 'Devolutions.PowerShell.SDK' and ($([System.String]::Copy('%(RuntimeCopyLocalItems.PathInPackage)').Contains('/lib/')) or $([System.String]::Copy('%(RuntimeCopyLocalItems.DestinationSubDirectory)').Contains('runtimes\')) or $([System.String]::Copy('%(RuntimeCopyLocalItems.DestinationSubDirectory)').Contains('runtimes/')))">
+        <DestinationSubDirectory></DestinationSubDirectory>
+      </RuntimeCopyLocalItems>
+      <RuntimeTargetsCopyLocalItems Condition="'$(_PowerShellSDKRuntimeNativeCopyToOutputEnabled)' == 'true' and '%(RuntimeTargetsCopyLocalItems.NuGetPackageId)' == 'Devolutions.PowerShell.SDK' and ($([System.String]::Copy('%(RuntimeTargetsCopyLocalItems.PathInPackage)').Contains('/lib/')) or $([System.String]::Copy('%(RuntimeTargetsCopyLocalItems.DestinationSubDirectory)').Contains('runtimes\')) or $([System.String]::Copy('%(RuntimeTargetsCopyLocalItems.DestinationSubDirectory)').Contains('runtimes/')))">
+        <DestinationSubDirectory></DestinationSubDirectory>
+      </RuntimeTargetsCopyLocalItems>
+      <_ContentFilesToPreprocess Remove="@(_ContentFilesToPreprocess)"
+                                 Condition="'$(_PowerShellSDKRuntimeNativeCopyToOutputEnabled)' == 'true' and '%(_ContentFilesToPreprocess.NuGetPackageId)' == 'Devolutions.PowerShell.SDK' and ($([System.String]::Copy('%(_ContentFilesToPreprocess.PathInPackage)').Contains('/runtimes/')) or $([System.String]::Copy('%(_ContentFilesToPreprocess.OutputPath)').Contains('runtimes\')) or $([System.String]::Copy('%(_ContentFilesToPreprocess.OutputPath)').Contains('runtimes/')))" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="_PowerShellSDKRemoveAutomaticSharedPayloadContentCopyItems"
+          AfterTargets="RunProduceContentAssets"
+          BeforeTargets="ResolveLockFileCopyLocalFiles"
+          Condition="'$(_PowerShellSDKRuntimeNativeCopyToOutputEnabled)' == 'true'">
+    <ItemGroup>
+      <_ContentCopyLocalItems Remove="@(_ContentCopyLocalItems)"
+                              Condition="'%(_ContentCopyLocalItems.NuGetPackageId)' == 'Devolutions.PowerShell.SDK' and ($([System.String]::Copy('%(_ContentCopyLocalItems.PathInPackage)').Contains('/runtimes/')) or $([System.String]::Copy('%(_ContentCopyLocalItems.TargetPath)').Contains('runtimes\')) or $([System.String]::Copy('%(_ContentCopyLocalItems.TargetPath)').Contains('runtimes/')))" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="_PowerShellSDKRemoveAutomaticSharedPayloadContentItems"
+          BeforeTargets="GetCopyToOutputDirectoryItems;_GetCopyToOutputDirectoryItemsFromThisProject;GetCopyToPublishDirectoryItems"
+          Condition="'$(_PowerShellSDKRuntimeNativeCopyToOutputEnabled)' == 'true' or '$(_PowerShellSDKRuntimeNativeCopyToPublishEnabled)' == 'true'">
+    <ItemGroup>
+      <None Remove="@(None)"
+            Condition="'%(None.NuGetPackageId)' == 'Devolutions.PowerShell.SDK' and ($([System.String]::Copy('%(None.TargetPath)').Contains('runtimes\')) or $([System.String]::Copy('%(None.TargetPath)').Contains('runtimes/'))) and ($([System.String]::Copy('%(None.TargetPath)').Contains('\Modules\')) or $([System.String]::Copy('%(None.TargetPath)').Contains('/Modules/')))" />
+      <Content Remove="@(Content)"
+               Condition="'%(Content.NuGetPackageId)' == 'Devolutions.PowerShell.SDK' and ($([System.String]::Copy('%(Content.TargetPath)').Contains('runtimes\')) or $([System.String]::Copy('%(Content.TargetPath)').Contains('runtimes/'))) and ($([System.String]::Copy('%(Content.TargetPath)').Contains('\Modules\')) or $([System.String]::Copy('%(Content.TargetPath)').Contains('/Modules/')))" />
     </ItemGroup>
   </Target>
 
@@ -149,7 +181,11 @@
           BeforeTargets="_HandleFileConflictsForPublish">
     <ItemGroup>
       <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
-                             Condition="'%(ResolvedFileToPublish.PowerShellSDKRuntimeNativeAppHost)' != 'true' and '%(ResolvedFileToPublish.PowerShellSDKRuntimeNativeSharedPayload)' != 'true' and ('%(ResolvedFileToPublish.NuGetPackageId)' == 'Devolutions.PowerShell.SDK' or $([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('\devolutions.powershell.sdk\')) or $([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('/devolutions.powershell.sdk/'))) and ($([System.String]::Copy('%(ResolvedFileToPublish.PathInPackage)').Contains('/native/')) or $([System.String]::Copy('%(ResolvedFileToPublish.PathInPackage)').Contains('/lib/')) or ($([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('\runtimes\')) and ($([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('\native\')) or $([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('\lib\')))) or ($([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('/runtimes/')) and ($([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('/native/')) or $([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('/lib/')))))" />
+                             Condition="'%(ResolvedFileToPublish.PowerShellSDKRuntimeNativeAppHost)' != 'true' and '%(ResolvedFileToPublish.PowerShellSDKRuntimeNativeSharedPayload)' != 'true' and ('%(ResolvedFileToPublish.NuGetPackageId)' == 'Devolutions.PowerShell.SDK' or $([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('\devolutions.powershell.sdk\')) or $([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('/devolutions.powershell.sdk/'))) and ($([System.String]::Copy('%(ResolvedFileToPublish.PathInPackage)').Contains('/native/')) or ($([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('\runtimes\')) and $([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('\native\'))) or ($([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('/runtimes/')) and $([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('/native/'))))" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+                             Condition="'$(_PowerShellSDKRuntimeNativeCopyToPublishEnabled)' == 'true' and '%(ResolvedFileToPublish.PowerShellSDKRuntimeNativeSharedPayload)' != 'true' and ('%(ResolvedFileToPublish.NuGetPackageId)' == 'Devolutions.PowerShell.SDK' or $([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('\devolutions.powershell.sdk\')) or $([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('/devolutions.powershell.sdk/'))) and ($([System.String]::Copy('%(ResolvedFileToPublish.PathInPackage)').Contains('/lib/')) or ($([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('\runtimes\')) and $([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('\lib\'))) or ($([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('/runtimes/')) and $([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('/lib/'))))" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+                             Condition="'$(_PowerShellSDKRuntimeNativeCopyToPublishEnabled)' == 'true' and '%(ResolvedFileToPublish.PowerShellSDKRuntimeNativeSharedPayload)' != 'true' and '%(ResolvedFileToPublish.Filename)%(ResolvedFileToPublish.Extension)' == 'System.Management.Automation.dll' and ('%(ResolvedFileToPublish.NuGetPackageId)' == 'PowerShellStandard.Library' or $([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('\powershellstandard.library\')) or $([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('/powershellstandard.library/')))" />
     </ItemGroup>
   </Target>
 
@@ -267,6 +303,13 @@
           DependsOnTargets="_PowerShellSDKResolveRuntimeNativeAppHosts"
           AfterTargets="CopyFilesToOutputDirectory"
           Condition="('$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'true' or '$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'True') and ('$(PowerShellSDKRuntimeNativeAppHostCopyToOutput)' == 'true' or '$(PowerShellSDKRuntimeNativeAppHostCopyToOutput)' == 'True')">
+    <ItemGroup>
+      <_PowerShellSDKAutomaticSharedOutputPayloadFile Include="$(OutDir)runtimes/$(_PowerShellSDKRuntimeNativeSharedPayloadGroup)/lib/$(_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework)/Microsoft.PowerShell*.dll;$(OutDir)runtimes/$(_PowerShellSDKRuntimeNativeSharedPayloadGroup)/lib/$(_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework)/Microsoft.PowerShell*.xml;$(OutDir)runtimes/$(_PowerShellSDKRuntimeNativeSharedPayloadGroup)/lib/$(_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework)/System.Management.Automation.dll;$(OutDir)runtimes/$(_PowerShellSDKRuntimeNativeSharedPayloadGroup)/lib/$(_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework)/System.Management.Automation.xml;$(OutDir)runtimes/$(_PowerShellSDKRuntimeNativeSharedPayloadGroup)/lib/$(_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework)/Microsoft.Management.Infrastructure.CimCmdlets.dll;$(OutDir)runtimes/$(_PowerShellSDKRuntimeNativeSharedPayloadGroup)/lib/$(_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework)/Microsoft.Management.Infrastructure.CimCmdlets.xml;$(OutDir)runtimes/$(_PowerShellSDKRuntimeNativeSharedPayloadGroup)/lib/$(_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework)/Microsoft.WSMan*.dll;$(OutDir)runtimes/$(_PowerShellSDKRuntimeNativeSharedPayloadGroup)/lib/$(_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework)/Microsoft.WSMan*.xml" />
+    </ItemGroup>
+    <Delete Files="@(_PowerShellSDKAutomaticSharedOutputPayloadFile)"
+            Condition="'@(_PowerShellSDKAutomaticSharedOutputPayloadFile)' != ''" />
+    <RemoveDir Directories="$(OutDir)runtimes/$(_PowerShellSDKRuntimeNativeSharedPayloadGroup)/lib/$(_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework)/Modules"
+               Condition="Exists('$(OutDir)runtimes/$(_PowerShellSDKRuntimeNativeSharedPayloadGroup)/lib/$(_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework)/Modules')" />
     <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeSharedRuntimeFile)"
           DestinationFiles="@(_PowerShellSDKRuntimeNativeSharedRuntimeFile->'$(OutDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="true" />
@@ -413,10 +456,15 @@
           AfterTargets="Publish"
           Condition="('$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'true' or '$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'True') and ('$(PowerShellSDKRuntimeNativeAppHostCopyToPublish)' == 'true' or '$(PowerShellSDKRuntimeNativeAppHostCopyToPublish)' == 'True')">
     <ItemGroup>
+      <_PowerShellSDKAutomaticSharedPublishPayloadFile Include="$(PublishDir)runtimes/$(_PowerShellSDKRuntimeNativeSharedPayloadGroup)/lib/$(_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework)/Microsoft.PowerShell*.dll;$(PublishDir)runtimes/$(_PowerShellSDKRuntimeNativeSharedPayloadGroup)/lib/$(_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework)/Microsoft.PowerShell*.xml;$(PublishDir)runtimes/$(_PowerShellSDKRuntimeNativeSharedPayloadGroup)/lib/$(_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework)/System.Management.Automation.dll;$(PublishDir)runtimes/$(_PowerShellSDKRuntimeNativeSharedPayloadGroup)/lib/$(_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework)/System.Management.Automation.xml;$(PublishDir)runtimes/$(_PowerShellSDKRuntimeNativeSharedPayloadGroup)/lib/$(_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework)/Microsoft.Management.Infrastructure.CimCmdlets.dll;$(PublishDir)runtimes/$(_PowerShellSDKRuntimeNativeSharedPayloadGroup)/lib/$(_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework)/Microsoft.Management.Infrastructure.CimCmdlets.xml;$(PublishDir)runtimes/$(_PowerShellSDKRuntimeNativeSharedPayloadGroup)/lib/$(_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework)/Microsoft.WSMan*.dll;$(PublishDir)runtimes/$(_PowerShellSDKRuntimeNativeSharedPayloadGroup)/lib/$(_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework)/Microsoft.WSMan*.xml" />
       <_PowerShellSDKRuntimeNativeSharedPublishDependencySourceFile Include="$(PublishDir)runtimes/$(_PowerShellSDKRuntimeNativeSharedPayloadRid)/lib/**/*.dll" />
       <_PowerShellSDKRuntimeNativeSharedPublishDependencyFile Include="@(_PowerShellSDKRuntimeNativeSharedPublishDependencySourceFile)"
                                                               Condition="!Exists('$(PublishDir)%(_PowerShellSDKRuntimeNativeSharedPublishDependencySourceFile.Filename)%(_PowerShellSDKRuntimeNativeSharedPublishDependencySourceFile.Extension)')" />
     </ItemGroup>
+    <Delete Files="@(_PowerShellSDKAutomaticSharedPublishPayloadFile)"
+            Condition="'@(_PowerShellSDKAutomaticSharedPublishPayloadFile)' != ''" />
+    <RemoveDir Directories="$(PublishDir)runtimes/$(_PowerShellSDKRuntimeNativeSharedPayloadGroup)/lib/$(_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework)/Modules"
+               Condition="Exists('$(PublishDir)runtimes/$(_PowerShellSDKRuntimeNativeSharedPayloadGroup)/lib/$(_PowerShellSDKRuntimeNativeSharedPayloadTargetFramework)/Modules')" />
     <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeSharedPublishDependencyFile)"
           DestinationFolder="$(PublishDir)"
           SkipUnchangedFiles="true"

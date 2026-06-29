@@ -116,6 +116,76 @@ function Add-RuntimeNativePublishDuplicateProbeTarget {
   [void] $Project.Project.AppendChild($Target)
 }
 
+function Add-PowerShellStandardPublishDuplicateProbeTarget {
+  param(
+    [Parameter(Mandatory)]
+    [xml] $Project,
+
+    [Parameter(Mandatory)]
+    [string] $PackageId,
+
+    [Parameter(Mandatory)]
+    [string] $PackageVersion,
+
+    [Parameter(Mandatory)]
+    [string] $SdkPackageId,
+
+    [Parameter(Mandatory)]
+    [string] $SdkPackageVersion,
+
+    [Parameter(Mandatory)]
+    [string] $RuntimeAssetGroup,
+
+    [Parameter(Mandatory)]
+    [string] $TargetFramework
+  )
+
+  $PackageDirectoryName = $PackageId.ToLowerInvariant()
+  $SdkPackageDirectoryName = $SdkPackageId.ToLowerInvariant()
+  $Target = $Project.CreateElement('Target')
+  $Target.SetAttribute('Name', 'InjectPowerShellStandardPublishDuplicateProbe')
+  $Target.SetAttribute('BeforeTargets', '_PowerShellSDKRemoveAutomaticRuntimeNativePublishItems')
+
+  $PropertyGroup = $Project.CreateElement('PropertyGroup')
+  foreach ($Property in @(
+      @{ Name = '_PowerShellStandardProbePath'; Value = "`$(NuGetPackageRoot)$PackageDirectoryName/$PackageVersion/lib/netstandard2.0/System.Management.Automation.dll" },
+      @{ Name = '_PowerShellStandardProbeSourcePath'; Value = "`$(NuGetPackageRoot)$SdkPackageDirectoryName/$SdkPackageVersion/runtimes/$RuntimeAssetGroup/lib/$TargetFramework/System.Management.Automation.dll" })) {
+    $Element = $Project.CreateElement($Property.Name)
+    $Element.InnerText = $Property.Value
+    [void] $PropertyGroup.AppendChild($Element)
+  }
+  [void] $Target.AppendChild($PropertyGroup)
+
+  $MakeDir = $Project.CreateElement('MakeDir')
+  $MakeDir.SetAttribute('Directories', "`$(NuGetPackageRoot)$PackageDirectoryName/$PackageVersion/lib/netstandard2.0")
+  $MakeDir.SetAttribute('Condition', "Exists('`$(_PowerShellStandardProbeSourcePath)')")
+  [void] $Target.AppendChild($MakeDir)
+
+  $Copy = $Project.CreateElement('Copy')
+  $Copy.SetAttribute('SourceFiles', '$(_PowerShellStandardProbeSourcePath)')
+  $Copy.SetAttribute('DestinationFiles', '$(_PowerShellStandardProbePath)')
+  $Copy.SetAttribute('Condition', "Exists('`$(_PowerShellStandardProbeSourcePath)')")
+  [void] $Target.AppendChild($Copy)
+
+  $ItemGroup = $Project.CreateElement('ItemGroup')
+  $ResolvedFileToPublish = $Project.CreateElement('ResolvedFileToPublish')
+  $ResolvedFileToPublish.SetAttribute('Include', '$(_PowerShellStandardProbePath)')
+  $ResolvedFileToPublish.SetAttribute('Condition', "Exists('`$(_PowerShellStandardProbePath)')")
+  foreach ($Metadata in @(
+      @{ Name = 'RelativePath'; Value = 'System.Management.Automation.dll' },
+      @{ Name = 'CopyToPublishDirectory'; Value = 'PreserveNewest' },
+      @{ Name = 'NuGetPackageId'; Value = $PackageId },
+      @{ Name = 'PathInPackage'; Value = 'lib/netstandard2.0/System.Management.Automation.dll' })) {
+    $MetadataElement = $Project.CreateElement($Metadata.Name)
+    $MetadataElement.InnerText = $Metadata.Value
+    [void] $ResolvedFileToPublish.AppendChild($MetadataElement)
+  }
+  [void] $ItemGroup.AppendChild($ResolvedFileToPublish)
+  [void] $Target.AppendChild($ItemGroup)
+
+  [void] $Project.Project.AppendChild($Target)
+}
+
 function Assert-AppHostOutput {
   param(
     [Parameter(Mandatory)]
@@ -219,6 +289,32 @@ function Assert-SharedPowerShellOutput {
   }
 
   Assert-RuntimeConfigMode -RuntimeConfigPath (Join-Path $Directory 'pwsh.runtimeconfig.json') -SelfContained $SelfContained -Description $Description
+}
+
+function Assert-NoSharedPowerShellRuntimeLibDuplicate {
+  param(
+    [Parameter(Mandatory)]
+    [string] $Directory,
+
+    [Parameter(Mandatory)]
+    [string] $RuntimeAssetGroup,
+
+    [Parameter(Mandatory)]
+    [string] $TargetFramework,
+
+    [Parameter(Mandatory)]
+    [string] $Description
+  )
+
+  foreach ($RelativePayloadPath in @(
+      "runtimes/$RuntimeAssetGroup/lib/$TargetFramework/System.Management.Automation.dll",
+      "runtimes/$RuntimeAssetGroup/lib/$TargetFramework/Microsoft.PowerShell.SDK.dll",
+      "runtimes/$RuntimeAssetGroup/lib/$TargetFramework/Modules/Microsoft.PowerShell.Management/Microsoft.PowerShell.Management.psd1")) {
+    $PayloadPath = Join-Path $Directory ($RelativePayloadPath -replace '/', [System.IO.Path]::DirectorySeparatorChar)
+    if (Test-Path $PayloadPath) {
+      throw "$Description unexpectedly duplicated shared PowerShell payload under runtime lib asset directory: $PayloadPath"
+    }
+  }
 }
 
 function Assert-FileContentMatches {
@@ -507,6 +603,8 @@ $ExecutableName = if ($RuntimeIdentifier -like 'win-*') { 'pwsh.exe' } else { 'p
 $RuntimeAssetGroup = if ($RuntimeIdentifier -like 'win-*') { 'win' } else { 'unix' }
 $RuntimeNativeValidationRids = if ($RuntimeAssetGroup -eq 'win') { @('win-x64', 'win-arm64') } else { @($RuntimeIdentifier) }
 $SampleTargetFramework = if ($RuntimeAssetGroup -eq 'win') { "$TargetFramework-windows10.0.19041" } else { $TargetFramework }
+$PowerShellStandardPackageId = 'PowerShellStandard.Library'
+$PowerShellStandardPackageVersion = '5.1.0'
 $ExpectedPackageEntries = @(
   "buildTransitive/$PackageId.targets",
   "tools/apphost/$RuntimeIdentifier/$ExecutableName",
@@ -664,6 +762,9 @@ foreach (PSObject result in ps.Invoke())
   Add-ProjectProperty -Project $Project -PropertyGroup $PropertyGroup -Name 'PowerShellSDKIncludeRuntimeNativeAppHosts' -Value 'true'
   Add-ProjectProperty -Project $Project -PropertyGroup $PropertyGroup -Name 'PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers' -Value ($RuntimeNativeValidationRids -join ';')
   Add-RuntimeNativePublishDuplicateProbeTarget -Project $Project -PackageId $PackageId -PackageVersion $PowerShellVersion -RuntimeIdentifiers $RuntimeNativeValidationRids
+  if ($RuntimeAssetGroup -eq 'win') {
+    Add-PowerShellStandardPublishDuplicateProbeTarget -Project $Project -PackageId $PowerShellStandardPackageId -PackageVersion $PowerShellStandardPackageVersion -SdkPackageId $PackageId -SdkPackageVersion $PowerShellVersion -RuntimeAssetGroup $RuntimeAssetGroup -TargetFramework $TargetFramework
+  }
   $Project.Save($ProjectPath)
 
   Invoke-DotNet @('add', $ProjectPath, 'package', $PackageId, '--version', $PowerShellVersion, '--no-restore')
@@ -696,6 +797,7 @@ foreach (PSObject result in ps.Invoke())
 
   $OutputDirectory = Join-Path $SampleDirectory (Join-Path 'bin' (Join-Path 'Debug' (Join-Path $SampleTargetFramework $RuntimeIdentifier)))
   Assert-SharedPowerShellOutput -Directory $OutputDirectory -SelfContained $false -Description 'Sample app output'
+  Assert-NoSharedPowerShellRuntimeLibDuplicate -Directory $OutputDirectory -RuntimeAssetGroup $RuntimeAssetGroup -TargetFramework $TargetFramework -Description 'Sample app output'
   Assert-SharedPackagePayloadPreserved -RestoredSdkPath $RestoredSdkPath -Directory $OutputDirectory -RuntimeAssetGroup $RuntimeAssetGroup -Description 'Sample app output'
   foreach ($RuntimeNativeRid in $RuntimeNativeValidationRids) {
     $RuntimeNativeExecutableName = if ($RuntimeNativeRid -like 'win-*') { 'pwsh.exe' } else { 'pwsh' }
@@ -720,6 +822,7 @@ foreach (PSObject result in ps.Invoke())
 
   $PublishDirectory = Join-Path $SampleDirectory (Join-Path 'bin' (Join-Path 'Release' (Join-Path $SampleTargetFramework (Join-Path $RuntimeIdentifier 'publish'))))
   Assert-SharedPowerShellOutput -Directory $PublishDirectory -SelfContained $true -Description 'Sample self-contained publish output'
+  Assert-NoSharedPowerShellRuntimeLibDuplicate -Directory $PublishDirectory -RuntimeAssetGroup $RuntimeAssetGroup -TargetFramework $TargetFramework -Description 'Sample self-contained publish output'
   Assert-SharedPackagePayloadPreserved -RestoredSdkPath $RestoredSdkPath -Directory $PublishDirectory -RuntimeAssetGroup $RuntimeAssetGroup -Description 'Sample self-contained publish output'
   foreach ($RuntimeNativeRid in $RuntimeNativeValidationRids) {
     $RuntimeNativeExecutableName = if ($RuntimeNativeRid -like 'win-*') { 'pwsh.exe' } else { 'pwsh' }
@@ -734,6 +837,7 @@ foreach (PSObject result in ps.Invoke())
   Remove-Item $FrameworkDependentPublishDirectory -Recurse -Force -ErrorAction SilentlyContinue
   Invoke-DotNet @('publish', $ProjectPath, '--nologo', '--verbosity', 'minimal', '-c', 'Release', '-r', $RuntimeIdentifier, '--self-contained', 'false', '-o', $FrameworkDependentPublishDirectory)
   Assert-SharedPowerShellOutput -Directory $FrameworkDependentPublishDirectory -SelfContained $false -Description 'Sample framework-dependent publish output'
+  Assert-NoSharedPowerShellRuntimeLibDuplicate -Directory $FrameworkDependentPublishDirectory -RuntimeAssetGroup $RuntimeAssetGroup -TargetFramework $TargetFramework -Description 'Sample framework-dependent publish output'
   Assert-SharedPackagePayloadPreserved -RestoredSdkPath $RestoredSdkPath -Directory $FrameworkDependentPublishDirectory -RuntimeAssetGroup $RuntimeAssetGroup -Description 'Sample framework-dependent publish output'
   foreach ($RuntimeNativeRid in $RuntimeNativeValidationRids) {
     $RuntimeNativeExecutableName = if ($RuntimeNativeRid -like 'win-*') { 'pwsh.exe' } else { 'pwsh' }
