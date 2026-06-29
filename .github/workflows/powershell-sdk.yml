@@ -1,5 +1,11 @@
 name: PowerShell SDK
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      sdk_package_revision:
+        description: Downstream SDK package revision for the current upstream PowerShell version
+        default: "0"
+        required: true
 env:
   POWERSHELL_VERSION: "7.6.3"
   POWERSHELL_RELEASE_TAG: "v7.6.3"
@@ -8,6 +14,7 @@ env:
   POWERSHELL_SOURCE_REF: "downstream/v7.6.3"
   SDK_VENDOR_NAME: "Devolutions"
   SDK_PACKAGE_ID: "Devolutions.PowerShell.SDK"
+  SDK_PACKAGE_REVISION: "0"
   MULTI_PWSH_APPHOST_PACKAGE_ID: "Devolutions.MultiPwsh.Cli"
   MULTI_PWSH_APPHOST_PACKAGE_VERSION: "0.14.0"
   MULTI_PWSH_APPHOST_PACKAGE_SOURCE: "https://api.nuget.org/v3/index.json"
@@ -84,6 +91,11 @@ jobs:
           if ($Env:POWERSHELL_VERSION -ne $ExpectedVersion) {
             throw "POWERSHELL_VERSION '$Env:POWERSHELL_VERSION' does not match POWERSHELL_RELEASE_TAG '$Env:POWERSHELL_RELEASE_TAG'."
           }
+          $SdkPackageRevision = '${{ inputs.sdk_package_revision }}'
+          if ($SdkPackageRevision -notmatch '^\d+$') {
+            throw "SDK package revision '$SdkPackageRevision' must be numeric."
+          }
+          Write-Host "SDK package version: $Env:POWERSHELL_VERSION.$SdkPackageRevision"
 
           $SourceCommit = (Invoke-GitPowerShell rev-parse HEAD).Trim()
           Write-Host "PowerShell source: $Env:POWERSHELL_SOURCE_REPOSITORY@$Env:POWERSHELL_SOURCE_REF ($SourceCommit)"
@@ -316,6 +328,78 @@ jobs:
             return ,$ResolvedAssets
           }
 
+          function Get-DotNetSdkBasePath {
+            $DotNetInfo = & dotnet --info
+            if ($LASTEXITCODE -ne 0) {
+              throw "dotnet --info failed with exit code $LASTEXITCODE"
+            }
+
+            $BasePathLine = $DotNetInfo | Where-Object { $_ -match '^\s*Base Path:\s*(.+)$' } | Select-Object -First 1
+            if (-not $BasePathLine -or $BasePathLine -notmatch '^\s*Base Path:\s*(.+)$') {
+              throw 'Unable to determine .NET SDK base path from dotnet --info.'
+            }
+
+            return $Matches[1].Trim()
+          }
+
+          function Get-DotNetAppHostTemplate {
+            param(
+              [Parameter(Mandatory)]
+              [string] $Rid
+            )
+
+            $SdkBasePath = Get-DotNetSdkBasePath
+            $DotNetRoot = Split-Path (Split-Path $SdkBasePath -Parent) -Parent
+            $HostPackRoot = Join-Path $DotNetRoot "packs/Microsoft.NETCore.App.Host.$Rid"
+            if (-not (Test-Path $HostPackRoot -PathType Container)) {
+              throw "The .NET SDK host pack for '$Rid' was not found at $HostPackRoot"
+            }
+
+            $TemplateName = if ($Rid -like 'win-*') { 'apphost.exe' } else { 'apphost' }
+            $Template = Get-ChildItem -LiteralPath $HostPackRoot -Recurse -Filter $TemplateName |
+              Sort-Object FullName |
+              Select-Object -Last 1
+            if (-not $Template) {
+              throw "The .NET SDK host pack for '$Rid' does not contain $TemplateName"
+            }
+
+            return $Template.FullName
+          }
+
+          function New-SharedPayloadAppHost {
+            param(
+              [Parameter(Mandatory)]
+              [string] $Rid,
+
+              [Parameter(Mandatory)]
+              [string] $DestinationPath,
+
+              [Parameter(Mandatory)]
+              [string] $ResourceAssemblyPath
+            )
+
+            $SdkBasePath = Get-DotNetSdkBasePath
+            $HostModelPath = Join-Path $SdkBasePath 'Microsoft.NET.HostModel.dll'
+            if (-not (Test-Path $HostModelPath -PathType Leaf)) {
+              throw "Microsoft.NET.HostModel.dll was not found in the .NET SDK: $HostModelPath"
+            }
+
+            if (-not ([System.Management.Automation.PSTypeName]'Microsoft.NET.HostModel.AppHost.HostWriter').Type) {
+              Add-Type -Path $HostModelPath
+            }
+            $TemplatePath = Get-DotNetAppHostTemplate -Rid $Rid
+            New-Item (Split-Path $DestinationPath -Parent) -ItemType Directory -Force | Out-Null
+            [Microsoft.NET.HostModel.AppHost.HostWriter]::CreateAppHost(
+              $TemplatePath,
+              $DestinationPath,
+              '../../../pwsh.dll',
+              $false,
+              $ResourceAssemblyPath,
+              $false,
+              $false,
+              $null)
+          }
+
           $Rid = "${{matrix.rid}}"
           $OutputPath = Join-Path $PWD "PowerShell-AppHost-$Rid"
           $PSBuildParams = @{
@@ -409,6 +493,10 @@ jobs:
             Copy-Item $SourcePath $StagePath -Force
           }
 
+          $RuntimeNativeStagePath = Join-Path $StagePath "runtime-native"
+          $RuntimeNativeAppHostPath = Join-Path $RuntimeNativeStagePath $AppHostAsset.AppHostFileName
+          New-SharedPayloadAppHost -Rid $Rid -DestinationPath $RuntimeNativeAppHostPath -ResourceAssemblyPath (Join-Path $OutputPath 'pwsh.dll')
+
       - name: Validate staged PowerShell apphost
         shell: pwsh
         run: |
@@ -420,12 +508,16 @@ jobs:
               throw "Missing staged PowerShell SDK apphost file for ${{matrix.rid}}: $FilePath"
             }
           }
+          $RuntimeNativeFilePath = Join-Path $StagePath "runtime-native/${{matrix.executable}}"
+          if (-not (Test-Path $RuntimeNativeFilePath -PathType Leaf)) {
+            throw "Missing staged shared-payload runtime-native apphost file for ${{matrix.rid}}: $RuntimeNativeFilePath"
+          }
 
       - name: Upload PowerShell apphost
         uses: actions/upload-artifact@v7.0.1
         with:
           name: PowerShell-SDK-AppHost-${{matrix.rid}}
-          path: pwsh-src/apphost-package/${{matrix.rid}}/*
+          path: pwsh-src/apphost-package/${{matrix.rid}}/**
 
       - name: Upload package runtime libraries
         if: ${{ matrix.rid == 'win-x64' || matrix.rid == 'linux-x64' }}
@@ -578,6 +670,102 @@ jobs:
             }
           }
 
+          function Get-NuGetGlobalPackagesPath {
+            $Output = & dotnet nuget locals global-packages --list
+            if ($LASTEXITCODE -ne 0) {
+              throw "dotnet nuget locals global-packages --list failed with exit code $LASTEXITCODE"
+            }
+
+            $GlobalPackagesLine = $Output | Where-Object { $_ -match '^\s*global-packages:\s*(.+)$' } | Select-Object -First 1
+            if (-not $GlobalPackagesLine -or $GlobalPackagesLine -notmatch '^\s*global-packages:\s*(.+)$') {
+              throw "Unable to determine NuGet global packages path."
+            }
+
+            return $Matches[1].Trim()
+          }
+
+          function Get-NuGetCacheVersion {
+            param(
+              [Parameter(Mandatory)]
+              [string] $Version
+            )
+
+            if ($Version -match '^(\d+\.\d+\.\d+)\.0$') {
+              return $Matches[1]
+            }
+            if ($Version -match '^\d+\.\d+$') {
+              return "$Version.0"
+            }
+
+            return $Version
+          }
+
+          function Copy-PSGalleryModulesToPackage {
+            param(
+              [Parameter(Mandatory)]
+              [string] $ProjectPath,
+
+              [Parameter(Mandatory)]
+              [string] $DestinationRoot
+            )
+
+            if (-not (Test-Path -LiteralPath $ProjectPath -PathType Leaf)) {
+              throw "PSGallery module project was not found: $ProjectPath"
+            }
+
+            $ProjectDirectory = Split-Path -Parent $ProjectPath
+            $NuGetConfigPath = Join-Path $ProjectDirectory "nuget.config"
+            $RestoreArguments = @("restore", $ProjectPath, "--verbosity", "minimal")
+            if (Test-Path -LiteralPath $NuGetConfigPath -PathType Leaf) {
+              $RestoreArguments += @("--configfile", $NuGetConfigPath)
+            }
+
+            & dotnet @RestoreArguments
+            if ($LASTEXITCODE -ne 0) {
+              throw "dotnet $($RestoreArguments -join ' ') failed with exit code $LASTEXITCODE"
+            }
+
+            [xml] $PSGalleryProject = Get-Content -LiteralPath $ProjectPath -Raw
+            $PackageReferences = @($PSGalleryProject.Project.ItemGroup.PackageReference)
+            if (-not $PackageReferences) {
+              throw "PSGallery module project contains no PackageReference items: $ProjectPath"
+            }
+
+            $NuGetGlobalPackagesPath = Get-NuGetGlobalPackagesPath
+            Remove-Item -LiteralPath $DestinationRoot -Recurse -Force -ErrorAction SilentlyContinue
+            New-Item -Path $DestinationRoot -ItemType Directory -Force | Out-Null
+
+            foreach ($PackageReference in $PackageReferences) {
+              $ModuleName = [string] $PackageReference.Include
+              $ModuleVersion = [string] $PackageReference.Version
+              if ([string]::IsNullOrWhiteSpace($ModuleName) -or [string]::IsNullOrWhiteSpace($ModuleVersion)) {
+                throw "Invalid PSGallery module PackageReference in $ProjectPath"
+              }
+
+              $CacheVersion = Get-NuGetCacheVersion -Version $ModuleVersion
+              $SourcePath = Join-Path $NuGetGlobalPackagesPath (Join-Path $ModuleName.ToLowerInvariant() $CacheVersion)
+              if (-not (Test-Path -LiteralPath $SourcePath -PathType Container)) {
+                throw "Restored PSGallery module package was not found: $SourcePath"
+              }
+
+              $DestinationPath = Join-Path $DestinationRoot $ModuleName
+              Remove-Item -LiteralPath $DestinationPath -Recurse -Force -ErrorAction SilentlyContinue
+              New-Item -Path $DestinationPath -ItemType Directory -Force | Out-Null
+              Copy-Item -Path (Join-Path $SourcePath "*") -Destination $DestinationPath -Recurse -Force
+
+              $ExcludedNames = @("fullclr", "System.Runtime.InteropServices.RuntimeInformation.dll")
+              $ExcludedPatterns = @("*.nupkg", "*.nupkg.metadata", "*.nupkg.sha512", "*.nuspec")
+              Get-ChildItem -LiteralPath $DestinationPath -Recurse -Force |
+                Sort-Object FullName -Descending |
+                Where-Object {
+                  $ItemName = $_.Name
+                  $ExcludedNames -contains $ItemName -or
+                  (@($ExcludedPatterns | Where-Object { $ItemName -like $_ }).Count -gt 0)
+                } |
+                Remove-Item -Recurse -Force
+            }
+          }
+
           function Pack-VendoredPackage {
             param(
               [Parameter(Mandatory)]
@@ -597,6 +785,13 @@ jobs:
               Pop-Location
             }
           }
+
+          $SdkPackageRevision = '${{ inputs.sdk_package_revision }}'
+          if ($SdkPackageRevision -notmatch '^\d+$') {
+            throw "SDK package revision '$SdkPackageRevision' must be numeric."
+          }
+          $SdkPackageVersion = "$Env:POWERSHELL_VERSION.$SdkPackageRevision"
+          Write-Host "SDK package version: $SdkPackageVersion"
 
           $PackageOutputPath = Join-Path $PWD "package"
           $PackageStageRoot = Join-Path $PWD "nupkg-stage"
@@ -697,6 +892,7 @@ jobs:
           ../eng/Vendor-PowerShellSdkPackage.ps1 `
             -PackageRoot $SdkStagePath `
             -PowerShellVersion $Env:POWERSHELL_VERSION `
+            -PackageVersion $SdkPackageVersion `
             -PackageId $Env:SDK_PACKAGE_ID `
             -VendorName $Env:SDK_VENDOR_NAME `
             -OverlayPathMap $SdkOverlayPathMap
@@ -716,6 +912,10 @@ jobs:
             New-Item $DestinationDir -ItemType Directory -ErrorAction SilentlyContinue | Out-Null
             Copy-Item $_ $DestinationDir
           }
+
+          Copy-PSGalleryModulesToPackage `
+            -ProjectPath "./src/Modules/PSGalleryModules.csproj" `
+            -DestinationRoot (Join-Path $SdkStagePath "buildTransitive/psgallery-modules")
 
           $AppHostDownloadPath = (Resolve-Path ../apphost-download).Path
           $AppHostPackageRoot = Join-Path $SdkStagePath "tools/apphost"
@@ -742,6 +942,14 @@ jobs:
               }
               Copy-Item $SourcePath $DestinationPath -Force
             }
+
+            $RuntimeNativeDestinationPath = Join-Path $SdkStagePath "runtimes/$Rid/native"
+            New-Item $RuntimeNativeDestinationPath -ItemType Directory -Force | Out-Null
+            $RuntimeNativeAppHostPath = Join-Path $ArtifactPath "runtime-native/$($AppHostFilesByRid[$Rid][0])"
+            if (-not (Test-Path $RuntimeNativeAppHostPath -PathType Leaf)) {
+              throw "Missing shared-payload runtime-native apphost for $Rid`: $RuntimeNativeAppHostPath"
+            }
+            Copy-Item $RuntimeNativeAppHostPath $RuntimeNativeDestinationPath -Force
           }
 
           $BuildTransitivePath = Join-Path $SdkStagePath "buildTransitive"
@@ -753,7 +961,7 @@ jobs:
       - name: Upload PowerShell package
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: PowerShell-SDK-${{env.POWERSHELL_VERSION}}
+          name: PowerShell-SDK-${{env.POWERSHELL_VERSION}}.${{inputs.sdk_package_revision}}
           path: "pwsh-src/package/*.nupkg"
 
   validate:
@@ -794,7 +1002,7 @@ jobs:
       - name: Download PowerShell SDK package
         uses: actions/download-artifact@v8.0.1
         with:
-          name: PowerShell-SDK-${{env.POWERSHELL_VERSION}}
+          name: PowerShell-SDK-${{env.POWERSHELL_VERSION}}.${{inputs.sdk_package_revision}}
           path: sdk-package
 
       - name: Validate PowerShell SDK package
@@ -809,10 +1017,16 @@ jobs:
           if (-not $TargetFramework) {
             throw "Unable to determine PowerShell TargetFramework from PowerShell.Common.props"
           }
+          $SdkPackageRevision = '${{ inputs.sdk_package_revision }}'
+          if ($SdkPackageRevision -notmatch '^\d+$') {
+            throw "SDK package revision '$SdkPackageRevision' must be numeric."
+          }
+          $SdkPackageVersion = "$Env:POWERSHELL_VERSION.$SdkPackageRevision"
 
           ./eng/Validate-PowerShellSdkPackage.ps1 `
             -PackageDirectory ./sdk-package `
             -PowerShellVersion $Env:POWERSHELL_VERSION `
+            -PackageVersion $SdkPackageVersion `
             -TargetFramework $TargetFramework `
             -RuntimeIdentifier ${{matrix.rid}} `
             -PackageId $Env:SDK_PACKAGE_ID `

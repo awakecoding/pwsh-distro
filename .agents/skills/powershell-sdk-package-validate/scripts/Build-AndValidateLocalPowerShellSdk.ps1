@@ -54,10 +54,16 @@ function Get-YamlScalar {
 
 $WorkflowPath = '.github\workflows\powershell-sdk.yml'
 $WorkflowText = Get-RepositoryFileText $WorkflowPath
+$PowerShellVersion = Get-YamlScalar -Text $WorkflowText -Name 'POWERSHELL_VERSION' -FileName $WorkflowPath
+$SdkPackageRevision = Get-YamlScalar -Text $WorkflowText -Name 'SDK_PACKAGE_REVISION' -FileName $WorkflowPath
+if ($SdkPackageRevision -notmatch '^\d+$') {
+  throw "SDK_PACKAGE_REVISION in $WorkflowPath must be numeric."
+}
 
 $BuildArguments = @{
-  PowerShellVersion = Get-YamlScalar -Text $WorkflowText -Name 'POWERSHELL_VERSION' -FileName $WorkflowPath
+  PowerShellVersion = $PowerShellVersion
   PowerShellReleaseTag = Get-YamlScalar -Text $WorkflowText -Name 'POWERSHELL_RELEASE_TAG' -FileName $WorkflowPath
+  SdkPackageVersion = "$PowerShellVersion.$SdkPackageRevision"
   PackageId = Get-YamlScalar -Text $WorkflowText -Name 'SDK_PACKAGE_ID' -FileName $WorkflowPath
   VendorName = Get-YamlScalar -Text $WorkflowText -Name 'SDK_VENDOR_NAME' -FileName $WorkflowPath
   MultiPwshPackageId = Get-YamlScalar -Text $WorkflowText -Name 'MULTI_PWSH_APPHOST_PACKAGE_ID' -FileName $WorkflowPath

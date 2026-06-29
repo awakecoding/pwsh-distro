@@ -6,6 +6,8 @@ param(
   [Parameter(Mandatory)]
   [string] $PowerShellVersion,
 
+  [string] $PackageVersion = $PowerShellVersion,
+
   [string] $PackageId = 'Devolutions.PowerShell.SDK',
 
   [string] $VendorName = 'Devolutions',
@@ -305,6 +307,9 @@ function Update-SdkNuspec {
     [string] $NewPackageId,
 
     [Parameter(Mandatory)]
+    [string] $PackageVersion,
+
+    [Parameter(Mandatory)]
     [string] $Vendor,
 
     [Parameter(Mandatory)]
@@ -324,6 +329,7 @@ function Update-SdkNuspec {
   }
 
   $Id.InnerText = $NewPackageId
+  Set-NuspecMetadataText -Document $Nuspec -NamespaceManager $NamespaceManager -Name 'version' -Value $PackageVersion
   Set-NuspecMetadataText -Document $Nuspec -NamespaceManager $NamespaceManager -Name 'authors' -Value $Vendor
   Set-NuspecMetadataText -Document $Nuspec -NamespaceManager $NamespaceManager -Name 'owners' -Value $Vendor
 
@@ -410,6 +416,7 @@ try {
   Update-SdkNuspec `
     -NuspecPath $VendoredNuspecPath `
     -NewPackageId $PackageId `
+    -PackageVersion $PackageVersion `
     -Vendor $VendorName `
     -OriginalVendor $OriginalVendorName `
     -DependencyGroups $DependencyGroups
@@ -418,7 +425,7 @@ try {
     Copy-OverlayFiles -Root $PackageRootPath -PathMap $OverlayPathMap
   }
 
-  Write-Host "Vendored $OriginalPackageId $PowerShellVersion as $PackageId with embedded PowerShell assemblies"
+  Write-Host "Vendored $OriginalPackageId $PowerShellVersion as $PackageId $PackageVersion with embedded PowerShell assemblies"
 } finally {
   Remove-Item $WorkDirectory -Recurse -Force -ErrorAction SilentlyContinue
 }
