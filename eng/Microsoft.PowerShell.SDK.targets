@@ -138,10 +138,19 @@
     <PowerShellSDKIncludePSGalleryModules Condition="'$(PowerShellSDKIncludePSGalleryModules)' == ''">false</PowerShellSDKIncludePSGalleryModules>
     <PowerShellSDKPSGalleryModulesCopyToOutput Condition="'$(PowerShellSDKPSGalleryModulesCopyToOutput)' == ''">true</PowerShellSDKPSGalleryModulesCopyToOutput>
     <PowerShellSDKPSGalleryModulesCopyToPublish Condition="'$(PowerShellSDKPSGalleryModulesCopyToPublish)' == ''">true</PowerShellSDKPSGalleryModulesCopyToPublish>
+    <PowerShellSDKGenerateConfig Condition="'$(PowerShellSDKGenerateConfig)' == ''">true</PowerShellSDKGenerateConfig>
+    <PowerShellSDKConfigExecutionPolicy Condition="'$(PowerShellSDKConfigExecutionPolicy)' == ''">Bypass</PowerShellSDKConfigExecutionPolicy>
+    <PowerShellSDKConfigCopyToOutput Condition="'$(PowerShellSDKConfigCopyToOutput)' == ''">true</PowerShellSDKConfigCopyToOutput>
+    <PowerShellSDKConfigCopyToPublish Condition="'$(PowerShellSDKConfigCopyToPublish)' == ''">true</PowerShellSDKConfigCopyToPublish>
+    <PowerShellSDKConfigOverwriteExisting Condition="'$(PowerShellSDKConfigOverwriteExisting)' == ''">false</PowerShellSDKConfigOverwriteExisting>
     <_PowerShellSDKRuntimeNativeCopyToOutputEnabled Condition="('$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'true' or '$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'True') and ('$(PowerShellSDKRuntimeNativeAppHostCopyToOutput)' == 'true' or '$(PowerShellSDKRuntimeNativeAppHostCopyToOutput)' == 'True')">true</_PowerShellSDKRuntimeNativeCopyToOutputEnabled>
     <_PowerShellSDKRuntimeNativeCopyToPublishEnabled Condition="('$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'true' or '$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'True') and ('$(PowerShellSDKRuntimeNativeAppHostCopyToPublish)' == 'true' or '$(PowerShellSDKRuntimeNativeAppHostCopyToPublish)' == 'True')">true</_PowerShellSDKRuntimeNativeCopyToPublishEnabled>
     <_PowerShellSDKPSGalleryModulesCopyToOutputEnabled Condition="('$(PowerShellSDKIncludePSGalleryModules)' == 'true' or '$(PowerShellSDKIncludePSGalleryModules)' == 'True') and ('$(PowerShellSDKPSGalleryModulesCopyToOutput)' == 'true' or '$(PowerShellSDKPSGalleryModulesCopyToOutput)' == 'True')">true</_PowerShellSDKPSGalleryModulesCopyToOutputEnabled>
     <_PowerShellSDKPSGalleryModulesCopyToPublishEnabled Condition="('$(PowerShellSDKIncludePSGalleryModules)' == 'true' or '$(PowerShellSDKIncludePSGalleryModules)' == 'True') and ('$(PowerShellSDKPSGalleryModulesCopyToPublish)' == 'true' or '$(PowerShellSDKPSGalleryModulesCopyToPublish)' == 'True')">true</_PowerShellSDKPSGalleryModulesCopyToPublishEnabled>
+    <_PowerShellSDKConfigEnabled Condition="('$(PowerShellSDKGenerateConfig)' == 'true' or '$(PowerShellSDKGenerateConfig)' == 'True') and (('$(PowerShellSDKIncludeAppHost)' == 'true' or '$(PowerShellSDKIncludeAppHost)' == 'True') or ('$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'true' or '$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'True'))">true</_PowerShellSDKConfigEnabled>
+    <_PowerShellSDKConfigCopyToOutputEnabled Condition="'$(_PowerShellSDKConfigEnabled)' == 'true' and ('$(PowerShellSDKConfigCopyToOutput)' == 'true' or '$(PowerShellSDKConfigCopyToOutput)' == 'True')">true</_PowerShellSDKConfigCopyToOutputEnabled>
+    <_PowerShellSDKConfigCopyToPublishEnabled Condition="'$(_PowerShellSDKConfigEnabled)' == 'true' and ('$(PowerShellSDKConfigCopyToPublish)' == 'true' or '$(PowerShellSDKConfigCopyToPublish)' == 'True')">true</_PowerShellSDKConfigCopyToPublishEnabled>
+    <_PowerShellSDKGeneratedConfigPath>$(IntermediateOutputPath)PowerShellSDK\powershell.config.json</_PowerShellSDKGeneratedConfigPath>
   </PropertyGroup>
 
   <Target Name="_PowerShellSDKRemoveAutomaticRuntimeNativeCopyItems"
@@ -321,6 +330,23 @@
            Text="PowerShellSDKIncludePSGalleryModules is true, but no PSGallery module files were selected." />
   </Target>
 
+  <Target Name="_PowerShellSDKGenerateConfig"
+          Condition="'$(_PowerShellSDKConfigEnabled)' == 'true'">
+    <Error Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(PowerShellSDKConfigExecutionPolicy)', '^(?i:AllSigned|Bypass|Default|RemoteSigned|Restricted|Undefined|Unrestricted)$')) != 'True'"
+           Text="PowerShellSDKConfigExecutionPolicy must be one of AllSigned, Bypass, Default, RemoteSigned, Restricted, Undefined, or Unrestricted." />
+
+    <MakeDir Directories="$(IntermediateOutputPath)PowerShellSDK" />
+    <ItemGroup>
+      <_PowerShellSDKConfigLine Include="{" />
+      <_PowerShellSDKConfigLine Include="  &quot;Microsoft.PowerShell:ExecutionPolicy&quot;: &quot;$(PowerShellSDKConfigExecutionPolicy)&quot;" />
+      <_PowerShellSDKConfigLine Include="}" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(_PowerShellSDKGeneratedConfigPath)"
+                      Lines="@(_PowerShellSDKConfigLine)"
+                      Overwrite="true"
+                      Encoding="UTF-8" />
+  </Target>
+
   <Target Name="PowerShellSDKCopyAppHostToOutput"
           DependsOnTargets="_PowerShellSDKResolveAppHost"
           AfterTargets="CopyFilesToOutputDirectory"
@@ -410,6 +436,16 @@
           DestinationFiles="@(_PowerShellSDKSelectedPSGalleryModuleFile->'$(OutDir)Modules/%(PowerShellSDKPSGalleryModuleName)/%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="true"
           Condition="'@(_PowerShellSDKSelectedPSGalleryModuleFile)' != ''" />
+  </Target>
+
+  <Target Name="PowerShellSDKCopyConfigToOutput"
+          DependsOnTargets="_PowerShellSDKGenerateConfig"
+          AfterTargets="CopyFilesToOutputDirectory"
+          Condition="'$(_PowerShellSDKConfigCopyToOutputEnabled)' == 'true'">
+    <Copy SourceFiles="$(_PowerShellSDKGeneratedConfigPath)"
+          DestinationFiles="$(OutDir)powershell.config.json"
+          SkipUnchangedFiles="true"
+          Condition="!Exists('$(OutDir)powershell.config.json') or '$(PowerShellSDKConfigOverwriteExisting)' == 'true' or '$(PowerShellSDKConfigOverwriteExisting)' == 'True'" />
   </Target>
 
   <Target Name="PowerShellSDKAddAppHostToPublish"
@@ -517,6 +553,16 @@
           Condition="'$(OS)' != 'Windows_NT' and Exists('$(PublishDir)runtimes/osx-x64/native/pwsh')" />
     <Exec Command="chmod +x &quot;$(PublishDir)runtimes/osx-arm64/native/pwsh&quot;"
           Condition="'$(OS)' != 'Windows_NT' and Exists('$(PublishDir)runtimes/osx-arm64/native/pwsh')" />
+  </Target>
+
+  <Target Name="PowerShellSDKCopyConfigToPublish"
+          DependsOnTargets="_PowerShellSDKGenerateConfig"
+          AfterTargets="Publish"
+          Condition="'$(_PowerShellSDKConfigCopyToPublishEnabled)' == 'true'">
+    <Copy SourceFiles="$(_PowerShellSDKGeneratedConfigPath)"
+          DestinationFiles="$(PublishDir)powershell.config.json"
+          SkipUnchangedFiles="true"
+          Condition="!Exists('$(PublishDir)powershell.config.json') or '$(PowerShellSDKConfigOverwriteExisting)' == 'true' or '$(PowerShellSDKConfigOverwriteExisting)' == 'True'" />
   </Target>
 
   <Target Name="PowerShellSDKCopyRuntimeNativeSharedPublishDependencies"

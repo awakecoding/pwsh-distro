@@ -375,6 +375,47 @@ function Assert-PSGalleryModulesPresent {
   }
 }
 
+function Assert-PowerShellConfig {
+  param(
+    [Parameter(Mandatory)]
+    [string] $Directory,
+
+    [Parameter(Mandatory)]
+    [string] $ExpectedExecutionPolicy,
+
+    [Parameter(Mandatory)]
+    [string] $Description
+  )
+
+  $ConfigPath = Join-Path $Directory 'powershell.config.json'
+  if (-not (Test-Path $ConfigPath -PathType Leaf)) {
+    throw "$Description is missing expected PowerShell config file: $ConfigPath"
+  }
+
+  $Config = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
+  $ExecutionPolicy = [string] $Config.'Microsoft.PowerShell:ExecutionPolicy'
+  if ($ExecutionPolicy -ne $ExpectedExecutionPolicy) {
+    throw "$Description has PowerShell config execution policy '$ExecutionPolicy', expected '$ExpectedExecutionPolicy': $ConfigPath"
+  }
+}
+
+function Set-PowerShellConfig {
+  param(
+    [Parameter(Mandatory)]
+    [string] $Directory,
+
+    [Parameter(Mandatory)]
+    [string] $ExecutionPolicy
+  )
+
+  $ConfigPath = Join-Path $Directory 'powershell.config.json'
+  @"
+{
+  "Microsoft.PowerShell:ExecutionPolicy": "$ExecutionPolicy"
+}
+"@ | Set-Content -LiteralPath $ConfigPath -Encoding utf8
+}
+
 function Assert-FileContentMatches {
   param(
     [Parameter(Mandatory)]
@@ -585,7 +626,7 @@ if ($selectObject.Source -ne 'Microsoft.PowerShell.Utility') {
   throw "Select-Object resolved from '$($selectObject.Source)' instead of Microsoft.PowerShell.Utility"
 }
 '@
-    $PwshModuleProbeOutput = & $PwshPath -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command $ModuleProbe
+    $PwshModuleProbeOutput = & $PwshPath -NoLogo -NoProfile -NonInteractive -Command $ModuleProbe
     if ($LASTEXITCODE -ne 0) {
       throw "$PwshPath failed module probe with exit code $LASTEXITCODE"
     }
@@ -645,7 +686,7 @@ if ($startThreadJob.Source -ne 'Microsoft.PowerShell.ThreadJob') {
   throw "Start-ThreadJob resolved from '$($startThreadJob.Source)' instead of Microsoft.PowerShell.ThreadJob"
 }
 '@
-    $PwshModuleProbeOutput = & $PwshPath -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command $ModuleProbe
+    $PwshModuleProbeOutput = & $PwshPath -NoLogo -NoProfile -NonInteractive -Command $ModuleProbe
     if ($LASTEXITCODE -ne 0) {
       throw "$PwshPath failed PSGallery module probe with exit code $LASTEXITCODE"
     }
@@ -935,6 +976,7 @@ foreach (PSObject result in ps.Invoke())
 
   $OutputDirectory = Join-Path $SampleDirectory (Join-Path 'bin' (Join-Path 'Debug' (Join-Path $SampleTargetFramework $RuntimeIdentifier)))
   Assert-SharedPowerShellOutput -Directory $OutputDirectory -SelfContained $false -Description 'Sample app output'
+  Assert-PowerShellConfig -Directory $OutputDirectory -ExpectedExecutionPolicy 'Bypass' -Description 'Sample app output'
   Assert-NoRootRuntimeNativeAppHostOutput -Directory $OutputDirectory -ExecutableName $ExecutableName -Description 'Sample app output'
   Assert-NoSharedPowerShellRuntimeLibDuplicate -Directory $OutputDirectory -RuntimeAssetGroup $RuntimeAssetGroup -TargetFramework $TargetFramework -Description 'Sample app output'
   Assert-PSGalleryModulesAbsent -Directory $OutputDirectory -ModuleNames $PSGalleryModulePackageIds -Description 'Sample app output'
@@ -949,6 +991,37 @@ foreach (PSObject result in ps.Invoke())
   }
   Invoke-RuntimeNativeOverwriteProbe -ProjectPath $ProjectPath -Directory $OutputDirectory -RestoredSdkPath $RestoredSdkPath -RuntimeIdentifiers $RuntimeNativeValidationRids -CurrentRuntimeIdentifier $RuntimeIdentifier -TargetName 'PowerShellSDKCopyRuntimeNativeAppHostsToOutput' -Description 'Sample app output overwrite probe'
 
+  Set-PowerShellConfig -Directory $OutputDirectory -ExecutionPolicy 'RemoteSigned'
+  Invoke-DotNet @(
+    'msbuild',
+    $ProjectPath,
+    '-nologo',
+    '-verbosity:minimal',
+    '-t:PowerShellSDKCopyConfigToOutput',
+    '/p:PowerShellSDKConfigExecutionPolicy=Bypass'
+  )
+  Assert-PowerShellConfig -Directory $OutputDirectory -ExpectedExecutionPolicy 'RemoteSigned' -Description 'Sample app output consumer config preservation probe'
+  Invoke-DotNet @(
+    'msbuild',
+    $ProjectPath,
+    '-nologo',
+    '-verbosity:minimal',
+    '-t:PowerShellSDKCopyConfigToOutput',
+    '/p:PowerShellSDKConfigExecutionPolicy=Unrestricted',
+    '/p:PowerShellSDKConfigOverwriteExisting=true'
+  )
+  Assert-PowerShellConfig -Directory $OutputDirectory -ExpectedExecutionPolicy 'Unrestricted' -Description 'Sample app output config overwrite probe'
+  Invoke-DotNet @(
+    'msbuild',
+    $ProjectPath,
+    '-nologo',
+    '-verbosity:minimal',
+    '-t:PowerShellSDKCopyConfigToOutput',
+    '/p:PowerShellSDKConfigExecutionPolicy=Bypass',
+    '/p:PowerShellSDKConfigOverwriteExisting=true'
+  )
+  Assert-PowerShellConfig -Directory $OutputDirectory -ExpectedExecutionPolicy 'Bypass' -Description 'Sample app output restored config'
+
   $AppOutput = & dotnet run --project $ProjectPath --no-build
   if ($LASTEXITCODE -ne 0) {
     throw "Sample app failed with exit code $LASTEXITCODE"
@@ -962,6 +1035,7 @@ foreach (PSObject result in ps.Invoke())
 
   $PublishDirectory = Join-Path $SampleDirectory (Join-Path 'bin' (Join-Path 'Release' (Join-Path $SampleTargetFramework (Join-Path $RuntimeIdentifier 'publish'))))
   Assert-SharedPowerShellOutput -Directory $PublishDirectory -SelfContained $true -Description 'Sample self-contained publish output'
+  Assert-PowerShellConfig -Directory $PublishDirectory -ExpectedExecutionPolicy 'Bypass' -Description 'Sample self-contained publish output'
   Assert-NoRootRuntimeNativeAppHostOutput -Directory $PublishDirectory -ExecutableName $ExecutableName -Description 'Sample self-contained publish output'
   Assert-NoSharedPowerShellRuntimeLibDuplicate -Directory $PublishDirectory -RuntimeAssetGroup $RuntimeAssetGroup -TargetFramework $TargetFramework -Description 'Sample self-contained publish output'
   Assert-PSGalleryModulesAbsent -Directory $PublishDirectory -ModuleNames $PSGalleryModulePackageIds -Description 'Sample self-contained publish output'
@@ -979,6 +1053,7 @@ foreach (PSObject result in ps.Invoke())
   Remove-Item $FrameworkDependentPublishDirectory -Recurse -Force -ErrorAction SilentlyContinue
   Invoke-DotNet @('publish', $ProjectPath, '--nologo', '--verbosity', 'minimal', '-c', 'Release', '-r', $RuntimeIdentifier, '--self-contained', 'false', '-o', $FrameworkDependentPublishDirectory)
   Assert-SharedPowerShellOutput -Directory $FrameworkDependentPublishDirectory -SelfContained $false -Description 'Sample framework-dependent publish output'
+  Assert-PowerShellConfig -Directory $FrameworkDependentPublishDirectory -ExpectedExecutionPolicy 'Bypass' -Description 'Sample framework-dependent publish output'
   Assert-NoRootRuntimeNativeAppHostOutput -Directory $FrameworkDependentPublishDirectory -ExecutableName $ExecutableName -Description 'Sample framework-dependent publish output'
   Assert-NoSharedPowerShellRuntimeLibDuplicate -Directory $FrameworkDependentPublishDirectory -RuntimeAssetGroup $RuntimeAssetGroup -TargetFramework $TargetFramework -Description 'Sample framework-dependent publish output'
   Assert-PSGalleryModulesAbsent -Directory $FrameworkDependentPublishDirectory -ModuleNames $PSGalleryModulePackageIds -Description 'Sample framework-dependent publish output'
@@ -1037,6 +1112,7 @@ foreach (PSObject result in ps.Invoke())
     "/p:PowerShellSDKPSGalleryModuleNames=$PSGallerySubsetModuleNamesPropertyValue"
   )
   Assert-SharedPowerShellOutput -Directory $PSGalleryPublishDirectory -SelfContained $false -Description 'Sample PSGallery publish output'
+  Assert-PowerShellConfig -Directory $PSGalleryPublishDirectory -ExpectedExecutionPolicy 'Bypass' -Description 'Sample PSGallery publish output'
   Assert-NoRootRuntimeNativeAppHostOutput -Directory $PSGalleryPublishDirectory -ExecutableName $ExecutableName -Description 'Sample PSGallery publish output'
   Assert-NoSharedPowerShellRuntimeLibDuplicate -Directory $PSGalleryPublishDirectory -RuntimeAssetGroup $RuntimeAssetGroup -TargetFramework $TargetFramework -Description 'Sample PSGallery publish output'
   Assert-PSGalleryModulesPresent -Directory $PSGalleryPublishDirectory -ModuleNames $PSGallerySubsetModuleNames -Description 'Sample PSGallery publish output'
