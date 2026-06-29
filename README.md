@@ -82,6 +82,17 @@ The SDK package also includes apphost files for `win-x64`, `linux-x64`, `linux-a
 
 The package selects `$(RuntimeIdentifier)` first, then falls back to the SDK host runtime identifier. Set `PowerShellSDKAppHostRuntimeIdentifier` to override that selection explicitly. Unsupported runtime identifiers fail the build with a clear error instead of silently omitting apphost files. The apphost output is intended for running scripts with the core built-in modules from `$PSHOME/Modules`; it is not a full PowerShell distribution archive with localized resources, help content, or optional gallery modules.
 
+For applications that need architecture-specific apphost launchers in a native asset layout, opt in to runtime-native apphost output:
+
+```xml
+<PropertyGroup>
+  <PowerShellSDKIncludeRuntimeNativeAppHosts>true</PowerShellSDKIncludeRuntimeNativeAppHosts>
+  <PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers>win-x64;win-arm64</PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers>
+</PropertyGroup>
+```
+
+This copies `runtimes/<rid>/native/pwsh.exe` (or `pwsh` on Unix), `pwsh.dll`, `pwsh.runtimeconfig.json`, PowerShell runtime assemblies, built-in modules, and the resolved output/publish DLL dependencies to the build and publish output for each selected RID. The native apphost resolves its managed payload from its own directory, so app-root payload next to the consuming application executable is not sufficient for `runtimes/<rid>/native` launchers. Leave `PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers` empty to copy every runtime-native apphost layout included in the package, or set it to a semicolon-delimited RID list. Set `PowerShellSDKRuntimeNativeAppHostCopyToOutput` or `PowerShellSDKRuntimeNativeAppHostCopyToPublish` to `false` to disable one copy phase.
+
 During NuGet packing, upstream `Microsoft.PowerShell.SDK` content file/reference metadata can emit NU5100/NU5131 package analysis warnings. The SDK workflow treats package validation as the source of truth: the generated sample must restore only the vendored PowerShell package ID, build, publish framework-dependent and self-contained outputs, execute `pwsh`, and load copied built-in modules.
 
 Generated source checkouts and build artifacts are not part of this repository.

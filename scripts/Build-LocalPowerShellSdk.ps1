@@ -90,6 +90,19 @@ function Get-PSBuildRuntime {
   }
 }
 
+function Get-AppHostExecutableName {
+  param(
+    [Parameter(Mandatory)]
+    [string] $Rid
+  )
+
+  if ($Rid -like 'win-*') {
+    return 'pwsh.exe'
+  }
+
+  return 'pwsh'
+}
+
 function ConvertTo-XmlAttributeValue {
   param(
     [AllowNull()]
@@ -325,8 +338,12 @@ try {
   }
 
   $RuntimeGroup = if ($RuntimeIdentifier -like 'win-*') { 'win' } else { 'unix' }
-  $ExecutableName = if ($RuntimeIdentifier -like 'win-*') { 'pwsh.exe' } else { 'pwsh' }
-  $AppHostAsset = Resolve-MultiPwshAppHostAsset -TargetFramework $TargetFramework -Rid $RuntimeIdentifier
+  $ExecutableName = Get-AppHostExecutableName -Rid $RuntimeIdentifier
+  $AppHostRuntimeIdentifiers = if ($RuntimeGroup -eq 'win') { @('win-x64', 'win-arm64') } else { @($RuntimeIdentifier) }
+  $AppHostAssets = @{}
+  foreach ($AppHostRuntimeIdentifier in $AppHostRuntimeIdentifiers) {
+    $AppHostAssets[$AppHostRuntimeIdentifier] = Resolve-MultiPwshAppHostAsset -TargetFramework $TargetFramework -Rid $AppHostRuntimeIdentifier
+  }
 
   $PSBuildParams = @{
     Configuration = 'Release'
@@ -412,18 +429,36 @@ try {
     Copy-Item $_ $DestinationDir -Force
   }
 
-  $AppHostPackageRoot = Join-Path $SdkStagePath "tools\apphost\$RuntimeIdentifier"
-  New-Item $AppHostPackageRoot -ItemType Directory -Force | Out-Null
-  Copy-Item -LiteralPath $AppHostAsset.SourcePath -Destination (Join-Path $AppHostPackageRoot $AppHostAsset.AppHostFileName) -Force
-  foreach ($FileName in @('pwsh.dll', 'pwsh.runtimeconfig.json')) {
-    $SourcePath = Join-Path $AppHostOutputPath $FileName
-    if (-not (Test-Path $SourcePath -PathType Leaf)) {
-      throw "Missing apphost file: $SourcePath"
+  foreach ($AppHostRuntimeIdentifier in $AppHostRuntimeIdentifiers) {
+    $AppHostAsset = $AppHostAssets[$AppHostRuntimeIdentifier]
+    $ExpectedExecutableName = Get-AppHostExecutableName -Rid $AppHostRuntimeIdentifier
+    if ($AppHostAsset.AppHostFileName -ne $ExpectedExecutableName) {
+      throw "Resolved apphost file '$($AppHostAsset.AppHostFileName)' for '$AppHostRuntimeIdentifier', expected '$ExpectedExecutableName'"
     }
-    Copy-Item $SourcePath $AppHostPackageRoot -Force
-  }
-  if ($AppHostAsset.AppHostFileName -ne $ExecutableName) {
-    throw "Resolved apphost file '$($AppHostAsset.AppHostFileName)' for '$RuntimeIdentifier', expected '$ExecutableName'"
+
+    $AppHostPackageRoot = Join-Path $SdkStagePath "tools\apphost\$AppHostRuntimeIdentifier"
+    New-Item $AppHostPackageRoot -ItemType Directory -Force | Out-Null
+    Copy-Item -LiteralPath $AppHostAsset.SourcePath -Destination (Join-Path $AppHostPackageRoot $AppHostAsset.AppHostFileName) -Force
+
+    $NativeAppHostPackageRoot = Join-Path $SdkStagePath "runtimes\$AppHostRuntimeIdentifier\native"
+    New-Item $NativeAppHostPackageRoot -ItemType Directory -Force | Out-Null
+    Copy-Item -LiteralPath $AppHostAsset.SourcePath -Destination (Join-Path $NativeAppHostPackageRoot $AppHostAsset.AppHostFileName) -Force
+
+    foreach ($FileName in @('pwsh.dll', 'pwsh.runtimeconfig.json')) {
+      $SourcePath = Join-Path $AppHostOutputPath $FileName
+      if (-not (Test-Path $SourcePath -PathType Leaf)) {
+        throw "Missing apphost file: $SourcePath"
+      }
+      Copy-Item $SourcePath $AppHostPackageRoot -Force
+      Copy-Item $SourcePath $NativeAppHostPackageRoot -Force
+    }
+    Get-ChildItem -LiteralPath $PackageRuntimePath -File | Copy-Item -Destination $NativeAppHostPackageRoot -Force
+
+    $NativeModuleSourceRoot = Join-Path $AnyAnyRuntimesDir "$RuntimeGroup\lib\$TargetFramework\Modules"
+    if (-not (Test-Path $NativeModuleSourceRoot -PathType Container)) {
+      throw "Missing module source root for native apphost layout: $NativeModuleSourceRoot"
+    }
+    Copy-Item $NativeModuleSourceRoot $NativeAppHostPackageRoot -Recurse -Force
   }
 
   $BuildTransitivePath = Join-Path $SdkStagePath 'buildTransitive'

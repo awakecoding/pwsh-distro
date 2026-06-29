@@ -742,6 +742,22 @@ jobs:
               }
               Copy-Item $SourcePath $DestinationPath -Force
             }
+
+            $RuntimeNativeDestinationPath = Join-Path $SdkStagePath "runtimes/$Rid/native"
+            New-Item $RuntimeNativeDestinationPath -ItemType Directory -Force | Out-Null
+            foreach ($FileName in $AppHostFilesByRid[$Rid]) {
+              Copy-Item (Join-Path $ArtifactPath $FileName) $RuntimeNativeDestinationPath -Force
+            }
+
+            $RuntimeGroup = if ($Rid -like 'win-*') { 'win' } else { 'unix' }
+            Get-ChildItem -LiteralPath $PackageRuntimeRoots[$RuntimeGroup] -File |
+              Copy-Item -Destination $RuntimeNativeDestinationPath -Force
+
+            $ModuleSourceRoot = Join-Path $AnyAnyRuntimesDir "$RuntimeGroup/lib/$TargetFramework/Modules"
+            if (-not (Test-Path $ModuleSourceRoot -PathType Container)) {
+              throw "Missing module source root for native apphost layout: $ModuleSourceRoot"
+            }
+            Copy-Item $ModuleSourceRoot $RuntimeNativeDestinationPath -Recurse -Force
           }
 
           $BuildTransitivePath = Join-Path $SdkStagePath "buildTransitive"

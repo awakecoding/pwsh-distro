@@ -132,7 +132,18 @@
 
   <PropertyGroup>
     <PowerShellSDKIncludeAppHost Condition="'$(PowerShellSDKIncludeAppHost)' == ''">false</PowerShellSDKIncludeAppHost>
+    <PowerShellSDKIncludeRuntimeNativeAppHosts Condition="'$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == ''">false</PowerShellSDKIncludeRuntimeNativeAppHosts>
+    <PowerShellSDKRuntimeNativeAppHostCopyToOutput Condition="'$(PowerShellSDKRuntimeNativeAppHostCopyToOutput)' == ''">true</PowerShellSDKRuntimeNativeAppHostCopyToOutput>
+    <PowerShellSDKRuntimeNativeAppHostCopyToPublish Condition="'$(PowerShellSDKRuntimeNativeAppHostCopyToPublish)' == ''">true</PowerShellSDKRuntimeNativeAppHostCopyToPublish>
   </PropertyGroup>
+
+  <Target Name="_PowerShellSDKRemoveAutomaticRuntimeNativeCopyItems"
+          AfterTargets="ResolvePackageAssets">
+    <ItemGroup>
+      <NativeCopyLocalItems Remove="@(NativeCopyLocalItems)"
+                            Condition="'%(NativeCopyLocalItems.NuGetPackageId)' == 'Devolutions.PowerShell.SDK' and $([System.String]::Copy('%(NativeCopyLocalItems.PathInPackage)').Contains('/native/'))" />
+    </ItemGroup>
+  </Target>
 
   <PropertyGroup Condition="'$(PowerShellSDKIncludeAppHost)' == 'true' or '$(PowerShellSDKIncludeAppHost)' == 'True'">
     <_PowerShellSDKAppHostRid Condition="'$(PowerShellSDKAppHostRuntimeIdentifier)' != ''">$(PowerShellSDKAppHostRuntimeIdentifier)</_PowerShellSDKAppHostRid>
@@ -164,6 +175,41 @@
     </ItemGroup>
   </Target>
 
+  <Target Name="_PowerShellSDKResolveRuntimeNativeAppHosts"
+          Condition="'$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'true' or '$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'True'">
+    <Error Condition="'$(PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers)' != '' and $([System.String]::Copy(';$(PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers);').Contains(';win-x64;')) and !Exists('$(MSBuildThisFileDirectory)..\runtimes\win-x64\native')"
+           Text="PowerShellSDKIncludeRuntimeNativeAppHosts requested 'win-x64', but this PowerShell SDK package does not include runtimes/win-x64/native." />
+    <Error Condition="'$(PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers)' != '' and $([System.String]::Copy(';$(PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers);').Contains(';win-arm64;')) and !Exists('$(MSBuildThisFileDirectory)..\runtimes\win-arm64\native')"
+           Text="PowerShellSDKIncludeRuntimeNativeAppHosts requested 'win-arm64', but this PowerShell SDK package does not include runtimes/win-arm64/native." />
+    <Error Condition="'$(PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers)' != '' and $([System.String]::Copy(';$(PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers);').Contains(';linux-x64;')) and !Exists('$(MSBuildThisFileDirectory)..\runtimes\linux-x64\native')"
+           Text="PowerShellSDKIncludeRuntimeNativeAppHosts requested 'linux-x64', but this PowerShell SDK package does not include runtimes/linux-x64/native." />
+    <Error Condition="'$(PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers)' != '' and $([System.String]::Copy(';$(PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers);').Contains(';linux-arm64;')) and !Exists('$(MSBuildThisFileDirectory)..\runtimes\linux-arm64\native')"
+           Text="PowerShellSDKIncludeRuntimeNativeAppHosts requested 'linux-arm64', but this PowerShell SDK package does not include runtimes/linux-arm64/native." />
+    <Error Condition="'$(PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers)' != '' and $([System.String]::Copy(';$(PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers);').Contains(';osx-x64;')) and !Exists('$(MSBuildThisFileDirectory)..\runtimes\osx-x64\native')"
+           Text="PowerShellSDKIncludeRuntimeNativeAppHosts requested 'osx-x64', but this PowerShell SDK package does not include runtimes/osx-x64/native." />
+    <Error Condition="'$(PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers)' != '' and $([System.String]::Copy(';$(PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers);').Contains(';osx-arm64;')) and !Exists('$(MSBuildThisFileDirectory)..\runtimes\osx-arm64\native')"
+           Text="PowerShellSDKIncludeRuntimeNativeAppHosts requested 'osx-arm64', but this PowerShell SDK package does not include runtimes/osx-arm64/native." />
+
+    <ItemGroup>
+      <_PowerShellSDKRuntimeNativeWinX64File Include="$(MSBuildThisFileDirectory)..\runtimes\win-x64\native\**\*"
+                                             Condition="Exists('$(MSBuildThisFileDirectory)..\runtimes\win-x64\native') and ('$(PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers)' == '' or $([System.String]::Copy(';$(PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers);').Contains(';win-x64;')))" />
+      <_PowerShellSDKRuntimeNativeWinArm64File Include="$(MSBuildThisFileDirectory)..\runtimes\win-arm64\native\**\*"
+                                               Condition="Exists('$(MSBuildThisFileDirectory)..\runtimes\win-arm64\native') and ('$(PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers)' == '' or $([System.String]::Copy(';$(PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers);').Contains(';win-arm64;')))" />
+      <_PowerShellSDKRuntimeNativeLinuxX64File Include="$(MSBuildThisFileDirectory)..\runtimes\linux-x64\native\**\*"
+                                               Condition="Exists('$(MSBuildThisFileDirectory)..\runtimes\linux-x64\native') and ('$(PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers)' == '' or $([System.String]::Copy(';$(PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers);').Contains(';linux-x64;')))" />
+      <_PowerShellSDKRuntimeNativeLinuxArm64File Include="$(MSBuildThisFileDirectory)..\runtimes\linux-arm64\native\**\*"
+                                                 Condition="Exists('$(MSBuildThisFileDirectory)..\runtimes\linux-arm64\native') and ('$(PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers)' == '' or $([System.String]::Copy(';$(PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers);').Contains(';linux-arm64;')))" />
+      <_PowerShellSDKRuntimeNativeOsxX64File Include="$(MSBuildThisFileDirectory)..\runtimes\osx-x64\native\**\*"
+                                             Condition="Exists('$(MSBuildThisFileDirectory)..\runtimes\osx-x64\native') and ('$(PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers)' == '' or $([System.String]::Copy(';$(PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers);').Contains(';osx-x64;')))" />
+      <_PowerShellSDKRuntimeNativeOsxArm64File Include="$(MSBuildThisFileDirectory)..\runtimes\osx-arm64\native\**\*"
+                                               Condition="Exists('$(MSBuildThisFileDirectory)..\runtimes\osx-arm64\native') and ('$(PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers)' == '' or $([System.String]::Copy(';$(PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers);').Contains(';osx-arm64;')))" />
+      <_PowerShellSDKRuntimeNativeAppHostFile Include="@(_PowerShellSDKRuntimeNativeWinX64File);@(_PowerShellSDKRuntimeNativeWinArm64File);@(_PowerShellSDKRuntimeNativeLinuxX64File);@(_PowerShellSDKRuntimeNativeLinuxArm64File);@(_PowerShellSDKRuntimeNativeOsxX64File);@(_PowerShellSDKRuntimeNativeOsxArm64File)" />
+    </ItemGroup>
+
+    <Error Condition="'@(_PowerShellSDKRuntimeNativeAppHostFile)' == ''"
+           Text="PowerShellSDKIncludeRuntimeNativeAppHosts is true, but no runtime-native apphost files were selected. Set PowerShellSDKRuntimeNativeAppHostRuntimeIdentifiers to a RID included in this package." />
+  </Target>
+
   <Target Name="PowerShellSDKCopyAppHostToOutput"
           DependsOnTargets="_PowerShellSDKResolveAppHost"
           AfterTargets="CopyFilesToOutputDirectory"
@@ -176,6 +222,71 @@
           SkipUnchangedFiles="true" />
     <Exec Command="chmod +x &quot;$(OutDir)pwsh&quot;"
           Condition="'$(OS)' != 'Windows_NT' and Exists('$(OutDir)pwsh')" />
+  </Target>
+
+  <Target Name="PowerShellSDKCopyRuntimeNativeAppHostsToOutput"
+          DependsOnTargets="_PowerShellSDKResolveRuntimeNativeAppHosts"
+          AfterTargets="CopyFilesToOutputDirectory"
+          Condition="('$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'true' or '$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'True') and ('$(PowerShellSDKRuntimeNativeAppHostCopyToOutput)' == 'true' or '$(PowerShellSDKRuntimeNativeAppHostCopyToOutput)' == 'True')">
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeWinX64File)"
+          DestinationFiles="@(_PowerShellSDKRuntimeNativeWinX64File->'$(OutDir)runtimes/win-x64/native/%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true"
+          Condition="'@(_PowerShellSDKRuntimeNativeWinX64File)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeWinArm64File)"
+          DestinationFiles="@(_PowerShellSDKRuntimeNativeWinArm64File->'$(OutDir)runtimes/win-arm64/native/%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true"
+          Condition="'@(_PowerShellSDKRuntimeNativeWinArm64File)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeLinuxX64File)"
+          DestinationFiles="@(_PowerShellSDKRuntimeNativeLinuxX64File->'$(OutDir)runtimes/linux-x64/native/%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true"
+          Condition="'@(_PowerShellSDKRuntimeNativeLinuxX64File)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeLinuxArm64File)"
+          DestinationFiles="@(_PowerShellSDKRuntimeNativeLinuxArm64File->'$(OutDir)runtimes/linux-arm64/native/%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true"
+          Condition="'@(_PowerShellSDKRuntimeNativeLinuxArm64File)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeOsxX64File)"
+          DestinationFiles="@(_PowerShellSDKRuntimeNativeOsxX64File->'$(OutDir)runtimes/osx-x64/native/%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true"
+          Condition="'@(_PowerShellSDKRuntimeNativeOsxX64File)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeOsxArm64File)"
+          DestinationFiles="@(_PowerShellSDKRuntimeNativeOsxArm64File->'$(OutDir)runtimes/osx-arm64/native/%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true"
+          Condition="'@(_PowerShellSDKRuntimeNativeOsxArm64File)' != ''" />
+    <ItemGroup>
+      <_PowerShellSDKRuntimeNativeOutputPayloadFile Include="$(OutDir)*.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeOutputPayloadFile)"
+          DestinationFolder="$(OutDir)runtimes/win-x64/native"
+          SkipUnchangedFiles="true"
+          Condition="'@(_PowerShellSDKRuntimeNativeWinX64File)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeOutputPayloadFile)"
+          DestinationFolder="$(OutDir)runtimes/win-arm64/native"
+          SkipUnchangedFiles="true"
+          Condition="'@(_PowerShellSDKRuntimeNativeWinArm64File)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeOutputPayloadFile)"
+          DestinationFolder="$(OutDir)runtimes/linux-x64/native"
+          SkipUnchangedFiles="true"
+          Condition="'@(_PowerShellSDKRuntimeNativeLinuxX64File)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeOutputPayloadFile)"
+          DestinationFolder="$(OutDir)runtimes/linux-arm64/native"
+          SkipUnchangedFiles="true"
+          Condition="'@(_PowerShellSDKRuntimeNativeLinuxArm64File)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeOutputPayloadFile)"
+          DestinationFolder="$(OutDir)runtimes/osx-x64/native"
+          SkipUnchangedFiles="true"
+          Condition="'@(_PowerShellSDKRuntimeNativeOsxX64File)' != ''" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativeOutputPayloadFile)"
+          DestinationFolder="$(OutDir)runtimes/osx-arm64/native"
+          SkipUnchangedFiles="true"
+          Condition="'@(_PowerShellSDKRuntimeNativeOsxArm64File)' != ''" />
+    <Exec Command="chmod +x &quot;$(OutDir)runtimes/linux-x64/native/pwsh&quot;"
+          Condition="'$(OS)' != 'Windows_NT' and Exists('$(OutDir)runtimes/linux-x64/native/pwsh')" />
+    <Exec Command="chmod +x &quot;$(OutDir)runtimes/linux-arm64/native/pwsh&quot;"
+          Condition="'$(OS)' != 'Windows_NT' and Exists('$(OutDir)runtimes/linux-arm64/native/pwsh')" />
+    <Exec Command="chmod +x &quot;$(OutDir)runtimes/osx-x64/native/pwsh&quot;"
+          Condition="'$(OS)' != 'Windows_NT' and Exists('$(OutDir)runtimes/osx-x64/native/pwsh')" />
+    <Exec Command="chmod +x &quot;$(OutDir)runtimes/osx-arm64/native/pwsh&quot;"
+          Condition="'$(OS)' != 'Windows_NT' and Exists('$(OutDir)runtimes/osx-arm64/native/pwsh')" />
   </Target>
 
   <Target Name="PowerShellSDKAddAppHostToPublish"
@@ -194,11 +305,88 @@
     </ItemGroup>
   </Target>
 
+  <Target Name="PowerShellSDKAddRuntimeNativeAppHostsToPublish"
+          DependsOnTargets="_PowerShellSDKResolveRuntimeNativeAppHosts"
+          BeforeTargets="ComputeFilesToPublish"
+          Condition="('$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'true' or '$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'True') and ('$(PowerShellSDKRuntimeNativeAppHostCopyToPublish)' == 'true' or '$(PowerShellSDKRuntimeNativeAppHostCopyToPublish)' == 'True')">
+    <ItemGroup>
+      <ResolvedFileToPublish Include="@(_PowerShellSDKRuntimeNativeWinX64File)">
+        <RelativePath>runtimes\win-x64\native\%(_PowerShellSDKRuntimeNativeWinX64File.RecursiveDir)%(_PowerShellSDKRuntimeNativeWinX64File.Filename)%(_PowerShellSDKRuntimeNativeWinX64File.Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+      <ResolvedFileToPublish Include="@(_PowerShellSDKRuntimeNativeWinArm64File)">
+        <RelativePath>runtimes\win-arm64\native\%(_PowerShellSDKRuntimeNativeWinArm64File.RecursiveDir)%(_PowerShellSDKRuntimeNativeWinArm64File.Filename)%(_PowerShellSDKRuntimeNativeWinArm64File.Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+      <ResolvedFileToPublish Include="@(_PowerShellSDKRuntimeNativeLinuxX64File)">
+        <RelativePath>runtimes\linux-x64\native\%(_PowerShellSDKRuntimeNativeLinuxX64File.RecursiveDir)%(_PowerShellSDKRuntimeNativeLinuxX64File.Filename)%(_PowerShellSDKRuntimeNativeLinuxX64File.Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+      <ResolvedFileToPublish Include="@(_PowerShellSDKRuntimeNativeLinuxArm64File)">
+        <RelativePath>runtimes\linux-arm64\native\%(_PowerShellSDKRuntimeNativeLinuxArm64File.RecursiveDir)%(_PowerShellSDKRuntimeNativeLinuxArm64File.Filename)%(_PowerShellSDKRuntimeNativeLinuxArm64File.Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+      <ResolvedFileToPublish Include="@(_PowerShellSDKRuntimeNativeOsxX64File)">
+        <RelativePath>runtimes\osx-x64\native\%(_PowerShellSDKRuntimeNativeOsxX64File.RecursiveDir)%(_PowerShellSDKRuntimeNativeOsxX64File.Filename)%(_PowerShellSDKRuntimeNativeOsxX64File.Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+      <ResolvedFileToPublish Include="@(_PowerShellSDKRuntimeNativeOsxArm64File)">
+        <RelativePath>runtimes\osx-arm64\native\%(_PowerShellSDKRuntimeNativeOsxArm64File.RecursiveDir)%(_PowerShellSDKRuntimeNativeOsxArm64File.Filename)%(_PowerShellSDKRuntimeNativeOsxArm64File.Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+
   <Target Name="PowerShellSDKChmodPublishedAppHost"
           AfterTargets="Publish"
           Condition="'$(PowerShellSDKIncludeAppHost)' == 'true' or '$(PowerShellSDKIncludeAppHost)' == 'True'">
     <Exec Command="chmod +x &quot;$(PublishDir)pwsh&quot;"
           Condition="'$(OS)' != 'Windows_NT' and Exists('$(PublishDir)pwsh')" />
+  </Target>
+
+  <Target Name="PowerShellSDKChmodPublishedRuntimeNativeAppHosts"
+          AfterTargets="Publish"
+          Condition="'$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'true' or '$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'True'">
+    <Exec Command="chmod +x &quot;$(PublishDir)runtimes/linux-x64/native/pwsh&quot;"
+          Condition="'$(OS)' != 'Windows_NT' and Exists('$(PublishDir)runtimes/linux-x64/native/pwsh')" />
+    <Exec Command="chmod +x &quot;$(PublishDir)runtimes/linux-arm64/native/pwsh&quot;"
+          Condition="'$(OS)' != 'Windows_NT' and Exists('$(PublishDir)runtimes/linux-arm64/native/pwsh')" />
+    <Exec Command="chmod +x &quot;$(PublishDir)runtimes/osx-x64/native/pwsh&quot;"
+          Condition="'$(OS)' != 'Windows_NT' and Exists('$(PublishDir)runtimes/osx-x64/native/pwsh')" />
+    <Exec Command="chmod +x &quot;$(PublishDir)runtimes/osx-arm64/native/pwsh&quot;"
+          Condition="'$(OS)' != 'Windows_NT' and Exists('$(PublishDir)runtimes/osx-arm64/native/pwsh')" />
+  </Target>
+
+  <Target Name="PowerShellSDKCopyRuntimeNativePublishPayload"
+          AfterTargets="Publish"
+          Condition="('$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'true' or '$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'True') and ('$(PowerShellSDKRuntimeNativeAppHostCopyToPublish)' == 'true' or '$(PowerShellSDKRuntimeNativeAppHostCopyToPublish)' == 'True')">
+    <ItemGroup>
+      <_PowerShellSDKRuntimeNativePublishPayloadFile Include="$(PublishDir)*.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativePublishPayloadFile)"
+          DestinationFolder="$(PublishDir)runtimes/win-x64/native"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(PublishDir)runtimes/win-x64/native')" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativePublishPayloadFile)"
+          DestinationFolder="$(PublishDir)runtimes/win-arm64/native"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(PublishDir)runtimes/win-arm64/native')" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativePublishPayloadFile)"
+          DestinationFolder="$(PublishDir)runtimes/linux-x64/native"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(PublishDir)runtimes/linux-x64/native')" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativePublishPayloadFile)"
+          DestinationFolder="$(PublishDir)runtimes/linux-arm64/native"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(PublishDir)runtimes/linux-arm64/native')" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativePublishPayloadFile)"
+          DestinationFolder="$(PublishDir)runtimes/osx-x64/native"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(PublishDir)runtimes/osx-x64/native')" />
+    <Copy SourceFiles="@(_PowerShellSDKRuntimeNativePublishPayloadFile)"
+          DestinationFolder="$(PublishDir)runtimes/osx-arm64/native"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(PublishDir)runtimes/osx-arm64/native')" />
   </Target>
 
   <Target Name="PowerShellSDKRewriteSelfContainedPublishedRuntimeConfig"
@@ -207,5 +395,34 @@
     <PowerShellSDKRewriteSelfContainedRuntimeConfig
       RuntimeConfigPath="$(PublishDir)pwsh.runtimeconfig.json"
       ApplicationRuntimeConfigPath="$(PublishDir)$(AssemblyName).runtimeconfig.json" />
+  </Target>
+
+  <Target Name="PowerShellSDKRewriteSelfContainedPublishedRuntimeNativeRuntimeConfigs"
+          AfterTargets="Publish"
+          Condition="('$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'true' or '$(PowerShellSDKIncludeRuntimeNativeAppHosts)' == 'True') and ('$(SelfContained)' == 'true' or '$(SelfContained)' == 'True')">
+    <PowerShellSDKRewriteSelfContainedRuntimeConfig
+      RuntimeConfigPath="$(PublishDir)runtimes/win-x64/native/pwsh.runtimeconfig.json"
+      ApplicationRuntimeConfigPath="$(PublishDir)$(AssemblyName).runtimeconfig.json"
+      Condition="Exists('$(PublishDir)runtimes/win-x64/native/pwsh.runtimeconfig.json')" />
+    <PowerShellSDKRewriteSelfContainedRuntimeConfig
+      RuntimeConfigPath="$(PublishDir)runtimes/win-arm64/native/pwsh.runtimeconfig.json"
+      ApplicationRuntimeConfigPath="$(PublishDir)$(AssemblyName).runtimeconfig.json"
+      Condition="Exists('$(PublishDir)runtimes/win-arm64/native/pwsh.runtimeconfig.json')" />
+    <PowerShellSDKRewriteSelfContainedRuntimeConfig
+      RuntimeConfigPath="$(PublishDir)runtimes/linux-x64/native/pwsh.runtimeconfig.json"
+      ApplicationRuntimeConfigPath="$(PublishDir)$(AssemblyName).runtimeconfig.json"
+      Condition="Exists('$(PublishDir)runtimes/linux-x64/native/pwsh.runtimeconfig.json')" />
+    <PowerShellSDKRewriteSelfContainedRuntimeConfig
+      RuntimeConfigPath="$(PublishDir)runtimes/linux-arm64/native/pwsh.runtimeconfig.json"
+      ApplicationRuntimeConfigPath="$(PublishDir)$(AssemblyName).runtimeconfig.json"
+      Condition="Exists('$(PublishDir)runtimes/linux-arm64/native/pwsh.runtimeconfig.json')" />
+    <PowerShellSDKRewriteSelfContainedRuntimeConfig
+      RuntimeConfigPath="$(PublishDir)runtimes/osx-x64/native/pwsh.runtimeconfig.json"
+      ApplicationRuntimeConfigPath="$(PublishDir)$(AssemblyName).runtimeconfig.json"
+      Condition="Exists('$(PublishDir)runtimes/osx-x64/native/pwsh.runtimeconfig.json')" />
+    <PowerShellSDKRewriteSelfContainedRuntimeConfig
+      RuntimeConfigPath="$(PublishDir)runtimes/osx-arm64/native/pwsh.runtimeconfig.json"
+      ApplicationRuntimeConfigPath="$(PublishDir)$(AssemblyName).runtimeconfig.json"
+      Condition="Exists('$(PublishDir)runtimes/osx-arm64/native/pwsh.runtimeconfig.json')" />
   </Target>
 </Project>
